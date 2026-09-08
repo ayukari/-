@@ -85,6 +85,7 @@ Gather や ovice のようなバーチャルオフィスに近い見た目をし
 | 05 | [データモデル](./docs/design/05-data-model.md) | スキーマと **作らないテーブル一覧** |
 | 06 | [ロードマップとリスク](./docs/design/06-roadmap.md) | Phase 0〜5 と各 DoD |
 | 07 | [接続の安全性](./docs/design/07-security.md) | 経路ごとの暗号化、E2EE、鍵配布、限界 |
+| 08 | [拡張のしかた](./docs/design/08-extensibility.md) | 配線と、できることのはしご |
 
 はじめて読むなら **[02. 問題解決](./docs/design/02-problem-solving.md)** から。他はすべてその帰結。
 

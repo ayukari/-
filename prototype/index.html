@@ -130,6 +130,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 #stage{position:absolute;inset:0;touch-action:none;-webkit-user-select:none;user-select:none}
 #stage canvas{display:block;width:100%;height:100%}
 #listView{position:absolute;inset:0;overflow:auto;padding:26px 22px 120px;display:none}
+@media (min-width:901px){ #listView{padding-right:326px} }
 .listGrid{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:11px}
 .listRow{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;
   grid-template-columns:34px minmax(0,1fr) auto;gap:14px;align-items:start}
@@ -207,6 +208,19 @@ select.ctl{appearance:none;padding-right:26px;background-image:linear-gradient(4
 .fab[disabled]{background:var(--surface);color:var(--muted);border:1px solid var(--line);box-shadow:var(--shadow)}
 .fab.leave{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
 @media (max-width:900px),(hover:none){ .fab{display:flex} }
+
+.sheetOverlay{
+  position:absolute;inset:0;z-index:26;display:grid;place-items:center;padding:18px;
+  background:color-mix(in srgb, var(--ink) 34%, transparent);
+}
+.sheetCard{
+  width:min(460px,100%);max-height:min(70%,520px);display:flex;flex-direction:column;
+  background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;
+}
+.sheetCard header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.sheetCard header h3{flex:1;font-size:15px}
+.sheetBody{overflow:auto;padding:15px 16px;font-size:13.5px;line-height:1.8;color:var(--ink-2)}
+.sheetBody .card{margin-bottom:10px}
 
 .toast{
   position:absolute;left:50%;bottom:88px;transform:translateX(-50%);z-index:30;
@@ -406,777 +420,992 @@ select.ctl{appearance:none;padding-right:26px;background-image:linear-gradient(4
       <span class="barhint" id="barHint">通話していない間はマイクに接続していません</span>
     </div>
 
+    <div class="sheetOverlay" id="overlay" hidden>
+      <div class="sheetCard">
+        <header>
+          <h3 id="ovTitle"></h3>
+          <button class="closeSheet" id="ovClose" aria-label="閉じる" style="display:grid">✕</button>
+        </header>
+        <div class="sheetBody" id="ovBody"></div>
+      </div>
+    </div>
+
     <div class="toast" id="toast"></div>
   </div>
 </section>
 
 <script>
-/* =========================================================================
+/* ============================================================================
    ひだまり — 操作プロトタイプ
-   論理レイヤー（2Dグリッド）と表現レイヤー（3D/2D/リスト）を分離している。
-   位置・当たり判定・近接判定はすべて論理側。描画は差し替え可能。
-   ========================================================================= */
 
-const COLORS = ['#C8873C','#4F8299','#7A6FA8','#5F8C6B','#B25F6A','#8A7B5E'];
-const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const TOUCH = matchMedia('(hover: none)').matches || navigator.maxTouchPoints > 0;
-const isSmall = () => innerWidth <= 900;
+   配線の方針（詳細は docs/design/08-extensibility.md）
 
-/* ---------- テーマ ---------- */
-const themeBtn = document.getElementById('themeBtn');
-themeBtn.onclick = () => {
-  const cur = document.documentElement.getAttribute('data-theme');
-  const sysDark = matchMedia('(prefers-color-scheme: dark)').matches;
-  const now = cur || (sysDark ? 'dark' : 'light');
-  document.documentElement.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
-  onThemeChange();
+     core      DOM も Three.js も知らない。盤面の規則だけ
+     registry  「何ができるか」の登録簿。ここに1件足すと3表現すべてに出る
+     systems   core の規則を時間で進める。副作用は port 越しにしか出さない
+     ports     外界との境界（契約）
+     adapters  port の実装（Three / Canvas2D / DOM / 入力）
+     boot      合成ルート。全部を知っているのはここだけ
+
+   状態の置き場所を3つに分ける（混ぜると壊れる）
+     world  毎フレーム変わるもの（座標）。購読しない。レンダラが直接読む
+     store  離散的に変わるもの（ステータス・会話・表示モード）。UI が購読する
+     bus    一回きりの出来事（座った・ノックした・切り替えた）。状態ではない
+   ============================================================================ */
+
+/* ===== 0. 環境 ============================================================ */
+const env = {
+  touch: matchMedia('(hover: none)').matches || navigator.maxTouchPoints > 0,
+  reduceMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+  small: () => innerWidth <= 900,
+  dark: () => {
+    const t = document.documentElement.getAttribute('data-theme');
+    return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  },
+  css: n => getComputedStyle(document.documentElement).getPropertyValue(n).trim(),
 };
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', onThemeChange);
-const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
-/* =========================================================================
-   論理レイヤー
-   ========================================================================= */
-const GRID = { w: 24, h: 16 };
-const AREAS = [
-  { id:'meet',  x:15, y:1,  w:8, h:6, kind:'MEETING', name:'会議室A' },
-  { id:'focus', x:1,  y:10, w:6, h:5, kind:'FOCUS',   name:'集中ルーム' },
-];
-// 家具（通行不可）: [x, y, w, h]
-const PROPS = [
-  [9,4,3,2],[9,10,3,2],            // テーブル2つ
-  [2,2,1,3],[4,2,1,3],[6,2,1,3],   // 左のデスク列
-  [17,9,2,1],[20,9,2,1],           // 右の棚
-];
-const SEATS = [
-  {id:'t1a',x:8, y:4, table:'t1'},{id:'t1b',x:8, y:5, table:'t1'},
-  {id:'t1c',x:12,y:4, table:'t1'},{id:'t1d',x:12,y:5, table:'t1'},
-  {id:'t2a',x:8, y:10,table:'t2'},{id:'t2b',x:8, y:11,table:'t2'},
-  {id:'t2c',x:12,y:10,table:'t2'},{id:'t2d',x:12,y:11,table:'t2'},
-];
-
-const blocked = new Set();
-for (let x=0;x<GRID.w;x++){ blocked.add(x+',0'); blocked.add(x+','+(GRID.h-1)); }
-for (let y=0;y<GRID.h;y++){ blocked.add('0,'+y); blocked.add((GRID.w-1)+','+y); }
-PROPS.forEach(([px,py,pw,ph])=>{ for(let x=px;x<px+pw;x++) for(let y=py;y<py+ph;y++) blocked.add(x+','+y); });
-const isBlocked = (x,y)=> blocked.has(Math.floor(x)+','+Math.floor(y));
-const areaAt = (x,y)=> AREAS.find(a=> x>=a.x && x<a.x+a.w && y>=a.y && y<a.y+a.h) || null;
-const seatAt = (x,y)=> SEATS.find(s=> s.x===Math.floor(x) && s.y===Math.floor(y)) || null;
-
-const TEAMS = [
-  { id:'prod', name:'プロダクト開発', desc:'決済まわりと新規機能。今週は請求バッチの調査が止まっています。', stuck:3 },
-  { id:'dsn',  name:'デザイン',       desc:'オンボーディングの見直しと、社内向けの図版づくり。',           stuck:0 },
-  { id:'sales',name:'セールス',       desc:'期初の商談と、導入企業の情シス審査への同席。',                 stuck:1 },
-  { id:'corp', name:'コーポレート',   desc:'採用と、来期の評価制度のたたき台づくり。',                     stuck:1 },
-];
-
-const NPCS = [
-  { name:'佐藤 けい',  color:'#4F8299', body:1, status:'open',  x:12.5, y:4.5, seat:'t1c', wander:false,
-    card:[{t:'決済APIのリトライ設計を書く',s:'doing'},{t:'PROJ-412 のレビュー',s:'open'}] },
-  { name:'鈴木 みなと',color:'#7A6FA8', body:0, status:'meet',  x:18.5, y:3.5, seat:null,  wander:false,
-    card:[{t:'情シス向けの提出資料をまとめる',s:'doing'},{t:'来週の全体会の進行',s:'open'}] },
-  { name:'田中 ひかる',color:'#5F8C6B', body:2, status:'focus', x:3.5,  y:12.5,seat:null,  wander:false,
-    card:[{t:'請求バッチの原因調査',s:'stuck',days:3},{t:'ログ基盤の棚卸し',s:'open'}] },
-  { name:'森 あきら',  color:'#B25F6A', body:0, status:'open',  x:8.5,  y:10.5,seat:'t2a', wander:true,
-    card:[{t:'新人のオンボード資料を1章だけ',s:'doing'},{t:'採用面談 2件',s:'open'}] },
-];
-
-const state = {
-  screen: 1,
-  me: { name:'山田 あおい', color:COLORS[0], body:0, x:12.5, y:8.5, dir:0, status:'open',
-        card:[{t:'決済APIのリトライ設計を書く',s:'doing'},{t:'新人のオンボード資料を1章だけ',s:'open'},{t:'請求バッチの原因調査',s:'stuck',days:3}] },
-  team: null,
-  mode: '3d',
-  seated: null,          // 着席中の seat id
-  inCall: false,
-  nearby: [],            // 近接している NPC の index
-  npcs: NPCS.map(n=>({...n, tx:n.x, ty:n.y})),
+/* ===== 1. Bus — 出来事（状態ではない） ==================================== */
+const Bus = (() => {
+  const map = new Map();
+  return {
+    on(type, fn){ (map.get(type) || map.set(type, new Set()).get(type)).add(fn); return () => map.get(type).delete(fn); },
+    emit(type, payload){ (map.get(type) || []).forEach(fn => fn(payload)); },
+  };
+})();
+const EV = {
+  SAT:'sat', STOOD:'stood', KNOCKED:'knocked', ANSWERED:'answered',
+  USED:'used', MODE:'mode', STATUS:'status', ENTERED:'entered', NOTICE:'notice',
 };
-const PROX = 2.6;        // 近接半径（可聴可能性の提示。通話の開始ではない）
 
-/* 近接判定（論理側。表現に依存しない） */
-function computeNearby(){
-  const out = [];
-  state.npcs.forEach((n,i)=>{
-    if (n.status === 'focus' || n.status === 'away') return;   // 集中中は近接対象外
-    const d = Math.hypot(n.x - state.me.x, n.y - state.me.y);
-    if (d < PROX) out.push(i);
-  });
-  state.nearby = out;
-}
+/* ===== 2. Store — 離散的な状態。UI が購読する ============================= */
+const Store = (() => {
+  let s = {
+    screen: 1,
+    mode: '3d',
+    fpsCap: 30,
+    status: 'open',
+    conversation: null,     // { kind:'seat'|'knock', seatId, members:[npcIndex] }
+    knocking: null,         // { npc, until }
+    panelOpen: false,
+    team: null,
+    quality: 1,
+  };
+  const subs = new Set();
+  return {
+    get: () => s,
+    set(patch){
+      const next = { ...s, ...patch };
+      const changed = Object.keys(patch).some(k => s[k] !== patch[k]);
+      s = next;
+      if (changed) subs.forEach(fn => fn(s));
+    },
+    subscribe(fn){ subs.add(fn); fn(s); return () => subs.delete(fn); },
+  };
+})();
 
-/* =========================================================================
-   ステップ1: アバター作成
-   ========================================================================= */
-const colorOpts = document.getElementById('colorOpts');
-COLORS.forEach((c,i)=>{
-  const b = document.createElement('button');
-  b.className='sw'; b.style.background=c; b.setAttribute('aria-pressed', i===0);
-  b.setAttribute('aria-label','色 '+(i+1));
-  b.onclick=()=>{ state.me.color=c; [...colorOpts.children].forEach((el,j)=>el.setAttribute('aria-pressed', j===i)); rebuildPreview(); };
-  colorOpts.appendChild(b);
-});
-document.getElementById('bodyOpts').onclick = e => {
-  const b = e.target.closest('[data-b]'); if(!b) return;
-  state.me.body = +b.dataset.b;
-  [...b.parentNode.children].forEach(el=>el.setAttribute('aria-pressed', el===b));
-  rebuildPreview();
-};
-document.getElementById('nameIn').oninput = e => { state.me.name = e.target.value || '名無し'; };
+/* ===== 3. World（core） — 盤面の規則。純粋 =============================== */
+const World = (() => {
+  const GRID = { w: 24, h: 16 };
+  const AREAS = [
+    { id:'meet',  x:15, y:1,  w:8, h:6, kind:'MEETING', name:'会議室A' },
+    { id:'focus', x:1,  y:10, w:6, h:5, kind:'FOCUS',   name:'集中ルーム' },
+  ];
+  const PROPS = [
+    [9,4,3,2],[9,10,3,2],
+    [2,2,1,3],[4,2,1,3],[6,2,1,3],
+    [17,9,2,1],[20,9,2,1],
+  ];
 
-/* --- アバターのジオメトリ（3Dプレビューと部屋で共用） --- */
-function buildAvatar(color, body, isMe){
-  const g = new THREE.Group();
-  const sc = [1, .86, 1.14][body];
-  const ht = [1, 1.12, .92][body];
-  const mat  = new THREE.MeshLambertMaterial({ color: new THREE.Color(color) });
-  const skin = new THREE.MeshLambertMaterial({ color: new THREE.Color('#E8C9A8') });
+  const blocked = new Set();
+  for (let x=0;x<GRID.w;x++){ blocked.add(x+',0'); blocked.add(x+','+(GRID.h-1)); }
+  for (let y=0;y<GRID.h;y++){ blocked.add('0,'+y); blocked.add((GRID.w-1)+','+y); }
+  PROPS.forEach(([px,py,pw,ph])=>{ for(let x=px;x<px+pw;x++) for(let y=py;y<py+ph;y++) blocked.add(x+','+y); });
 
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(.30*sc,.34*sc,.62*ht,7), mat);
-  torso.position.y = .55*ht; g.add(torso);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(.24,10,8), skin);
-  head.position.y = 1.06*ht; g.add(head);
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(.253,10,6,0,Math.PI*2,0,Math.PI*0.46), mat);
-  hair.position.y = 1.075*ht; g.add(hair);
-  // 目＝向きが分かる最小の手がかり（動的シャドウの代わりに、これで生き物に見せる）
-  const eyeMat = new THREE.MeshBasicMaterial({ color:0x2A2119 });
-  const eyeGeo = new THREE.SphereGeometry(.032,6,5);
-  [-.085,.085].forEach(ex=>{
-    const e = new THREE.Mesh(eyeGeo, eyeMat);
-    e.position.set(ex, 1.045*ht, .215); g.add(e);
-  });
-  // ブロブシャドウ（動的シャドウは使わない）
-  const sh = new THREE.Mesh(new THREE.CircleGeometry(.36*sc,12),
-      new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:.13 }));
-  sh.rotation.x = -Math.PI/2; sh.position.y = .012; g.add(sh);
+  /* 置いてあるもの。種別の中身は Registry が知っている（World は知らない） */
+  const objects = [
+    { id:'t1a', kind:'seat', x:8,  y:4,  data:{ table:'t1' } },
+    { id:'t1b', kind:'seat', x:8,  y:5,  data:{ table:'t1' } },
+    { id:'t1c', kind:'seat', x:12, y:4,  data:{ table:'t1' } },
+    { id:'t1d', kind:'seat', x:12, y:5,  data:{ table:'t1' } },
+    { id:'t2a', kind:'seat', x:8,  y:10, data:{ table:'t2' } },
+    { id:'t2b', kind:'seat', x:8,  y:11, data:{ table:'t2' } },
+    { id:'t2c', kind:'seat', x:12, y:10, data:{ table:'t2' } },
+    { id:'t2d', kind:'seat', x:12, y:11, data:{ table:'t2' } },
+    { id:'note1', kind:'note', x:3, y:8, data:{
+        title:'チェックインの時間',
+        body:'このチームは平日 10:00 に「今週のカード」を更新します。<br>強制ではありません。書いていない人に通知は飛びません。' } },
+    { id:'board1', kind:'board', x:20, y:12, data:{ title:'チームの今週' } },
+  ];
 
-  if (isMe){
-    const ring = new THREE.Mesh(new THREE.RingGeometry(.44,.52,20),
-        new THREE.MeshBasicMaterial({ color:new THREE.Color(color), transparent:true, opacity:.75, side:THREE.DoubleSide }));
-    ring.rotation.x = -Math.PI/2; ring.position.y = .02; g.add(ring);
+  /* 可変（毎フレーム更新される。購読しない） */
+  const me = { name:'山田 あおい', color:'#C8873C', body:0, x:12.5, y:8.5, dir:0,
+    card:[{t:'決済APIのリトライ設計を書く',s:'doing'},
+          {t:'新人のオンボード資料を1章だけ',s:'open'},
+          {t:'請求バッチの原因調査',s:'stuck',days:3}] };
+
+  const npcs = [
+    { name:'佐藤 けい',  color:'#4F8299', body:1, status:'open',  x:12.5, y:4.5, seat:'t1c', wander:false,
+      card:[{t:'決済APIのリトライ設計を書く',s:'doing'},{t:'PROJ-412 のレビュー',s:'open'}] },
+    { name:'鈴木 みなと',color:'#7A6FA8', body:0, status:'meet',  x:18.5, y:3.5, seat:null,  wander:false,
+      card:[{t:'情シス向けの提出資料をまとめる',s:'doing'},{t:'来週の全体会の進行',s:'open'}] },
+    { name:'田中 ひかる',color:'#5F8C6B', body:2, status:'focus', x:3.5,  y:12.5,seat:null,  wander:false,
+      card:[{t:'請求バッチの原因調査',s:'stuck',days:3},{t:'ログ基盤の棚卸し',s:'open'}] },
+    { name:'森 あきら',  color:'#B25F6A', body:0, status:'open',  x:8.5,  y:10.5,seat:'t2a', wander:true,
+      card:[{t:'新人のオンボード資料を1章だけ',s:'doing'},{t:'採用面談 2件',s:'open'}] },
+  ].map(n => ({ ...n, tx:n.x, ty:n.y }));
+
+  const PROX = 2.6;      // 可聴可能性の提示（通話の開始ではない）
+  const REACH = 1.5;     // オブジェクトに手が届く距離
+
+  const isBlocked = (x,y) => blocked.has(Math.floor(x)+','+Math.floor(y));
+  const areaAt = (x,y) => AREAS.find(a => x>=a.x && x<a.x+a.w && y>=a.y && y<a.y+a.h) || null;
+  const objectAt = (x,y) => objects.find(o => o.x === Math.floor(x) && o.y === Math.floor(y)) || null;
+  const dist = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+
+  /** 到達可能な最も近いオブジェクト。足元優先、次に手の届く範囲 */
+  function reachableObject(){
+    const under = objectAt(me.x, me.y);
+    if (under) return under;
+    let best = null, bd = REACH;
+    objects.forEach(o => {
+      const d = Math.hypot(o.x + .5 - me.x, o.y + .5 - me.y);
+      if (d < bd){ bd = d; best = o; }
+    });
+    return best;
   }
-  g.userData.height = ht;
-  return g;
+
+  /** 近接している人（集中中・離席は対象外。原則2） */
+  function nearbyPeople(){
+    return npcs.map((n,i)=>({n,i}))
+      .filter(({n}) => n.status !== 'focus' && n.status !== 'away')
+      .filter(({n}) => dist(n, me) < PROX)
+      .sort((a,b) => dist(a.n, me) - dist(b.n, me));
+  }
+
+  /** 移動の確定。壁ずり（軸ごとに判定）。サーバ権威版もこの関数と同じ形になる */
+  function resolveMove(dx, dy, sp){
+    const len = Math.hypot(dx,dy) || 1;
+    const nx = me.x + dx/len*sp, ny = me.y + dy/len*sp;
+    if (!isBlocked(nx, me.y)) me.x = nx;
+    if (!isBlocked(me.x, ny)) me.y = ny;
+    me.dir = Math.atan2(dx, dy);
+  }
+
+  return { GRID, AREAS, PROPS, blocked, objects, me, npcs, PROX, REACH,
+           isBlocked, areaAt, objectAt, reachableObject, nearbyPeople, resolveMove, dist };
+})();
+
+/* ===== 4. Registry — 拡張点。1件足すと3表現すべてに出る ================== */
+const Registry = (() => {
+  const kinds = new Map();
+  return {
+    /**
+     * @param kind  種別名
+     * @param def   {
+     *   action(ctx)                    その場で押せる行為 → {label, sub, run} | null
+     *   build3d(obj, mat)              THREE.Object3D を返す（省略可）
+     *   draw2d(obj, g, T)              Canvas2D に描く（省略可）
+     *   listRow(obj)                   リスト表示の1行 HTML（省略可）
+     * }
+     */
+    define(kind, def){ kinds.set(kind, def); },
+    get: kind => kinds.get(kind),
+    all: () => [...kinds.entries()],
+  };
+})();
+
+/* ===== 5. Systems — 規則を時間で進める ================================== */
+const Systems = {};
+
+/* --- 移動 --- */
+Systems.movement = (() => {
+  let target = null;
+  return {
+    setTarget(p){ target = p; },
+    clearTarget(){ target = null; },
+    step(dt, axis){
+      const sp = 4.2 * dt;
+      let { dx, dy } = axis;
+      if (dx || dy) target = null;
+      if (!dx && !dy && target){
+        const vx = target.x - World.me.x, vy = target.y - World.me.y;
+        const d = Math.hypot(vx, vy);
+        if (d < .12) target = null; else { dx = vx/d; dy = vy/d; }
+      }
+      if (!dx && !dy) return;
+      World.resolveMove(dx, dy, sp);
+      Systems.conversation.checkLeftSeat();
+    },
+  };
+})();
+
+/* --- 会話（着席・ノック・通話） --- */
+Systems.conversation = {
+  sit(seatObj){
+    const st = Store.get();
+    if (st.status === 'focus'){ Bus.emit(EV.NOTICE, '集中中は席につけません。ステータスを変えてください'); return; }
+    const mates = World.npcs
+      .map((n,i)=>({n,i}))
+      .filter(({n}) => n.seat && World.objects.find(o=>o.id===n.seat)?.data.table === seatObj.data.table);
+    Store.set({ conversation:{ kind:'seat', seatId:seatObj.id, members: mates.map(m=>m.i) }, status:'meet' });
+    Bus.emit(EV.SAT, { seat: seatObj, mates: mates.map(m=>m.n.name) });
+  },
+  stand(){
+    if (!Store.get().conversation) return;
+    Store.set({ conversation:null, status:'open' });
+    Bus.emit(EV.STOOD);
+  },
+  checkLeftSeat(){
+    const c = Store.get().conversation;
+    if (!c || c.kind !== 'seat') return;
+    const o = World.objectAt(World.me.x, World.me.y);
+    if (!o || o.id !== c.seatId) this.stand();
+  },
+  knock(npcIndex){
+    if (Store.get().knocking) return;
+    Store.set({ knocking:{ npc:npcIndex, until: performance.now() + 1400 } });
+    Bus.emit(EV.KNOCKED, World.npcs[npcIndex]);
+  },
+  /** ノックの返事。相手が「オープン」なら受ける。無反応も正常な応答（原則1） */
+  tick(now){
+    const k = Store.get().knocking;
+    if (!k || now < k.until) return;
+    const npc = World.npcs[k.npc];
+    if (npc.status === 'open'){
+      Store.set({ knocking:null, conversation:{ kind:'knock', seatId:null, members:[k.npc] }, status:'meet' });
+      Bus.emit(EV.ANSWERED, { npc, accepted:true });
+    } else {
+      Store.set({ knocking:null });
+      Bus.emit(EV.ANSWERED, { npc, accepted:false });
+    }
+  },
+  inCall: () => !!Store.get().conversation,
+};
+
+/* --- 相互作用のディスパッチ。何が押せるかは Registry が決める --- */
+Systems.interaction = {
+  /** いま押せる行為を1つ返す。UI（キー・FAB）はこれだけを見る */
+  resolve(){
+    const st = Store.get();
+    if (st.conversation) {
+      return { label: st.conversation.kind === 'seat' ? '立つ' : '終える',
+               sub:'通話を終える', enabled:true, run: () => Systems.conversation.stand() };
+    }
+    if (st.knocking) return { label:'ノック中', sub:'返事を待っています', enabled:false, run(){} };
+
+    const obj = World.reachableObject();
+    if (obj){
+      const def = Registry.get(obj.kind);
+      const a = def && def.action && def.action({ obj, store: Store.get(), world: World });
+      if (a) return { ...a, enabled: a.enabled !== false };
+    }
+    const near = World.nearbyPeople()[0];
+    if (near) return { label:'ノック', sub: near.n.name.split(' ')[0] + 'さんに',
+                       enabled:true, run: () => Systems.conversation.knock(near.i) };
+    return { label:'—', sub:'近くに何もありません', enabled:false, run(){} };
+  },
+};
+
+/* --- 同僚のふるまい --- */
+Systems.presence = {
+  step(dt){
+    World.npcs.forEach(n => {
+      if (!n.wander) return;
+      const d = Math.hypot(n.tx-n.x, n.ty-n.y);
+      if (d < .2){
+        if (Math.random() < .012){
+          let tx, ty, tries = 0;
+          do { tx = 6+Math.random()*8; ty = 8+Math.random()*5; tries++; } while (World.isBlocked(tx,ty) && tries<20);
+          n.tx = tx; n.ty = ty;
+        }
+      } else { n.x += (n.tx-n.x)/d * 1.5 * dt; n.y += (n.ty-n.y)/d * 1.5 * dt; }
+    });
+  },
+};
+
+/* ===== 6. Port: SpaceRenderer ===========================================
+   実装が満たす契約。core はこの形しか知らない。
+     mount(host)   描画先に取り付ける
+     render()      1フレーム描く。World を直接読む（購読しない）
+     resize()      寸法が変わった
+     unmount()     片付ける
+     stats()       { calls, tris } 計測用
+   ======================================================================== */
+
+/* ===== 7. Adapter A: 3D（Three.js） ====================================== */
+function ThreeRenderer(){
+  let r, sc, cam, mat, meG, npcG, rings, labels, meLabel, floor, objectRoot, sun, part, ground;
+  const labelCache = new Map();
+
+  function avatar(color, body, isMe){
+    const g = new THREE.Group();
+    const sc_ = [1, .86, 1.14][body], ht = [1, 1.12, .92][body];
+    const m = new THREE.MeshLambertMaterial({ color:new THREE.Color(color) });
+    const skin = new THREE.MeshLambertMaterial({ color:new THREE.Color('#E8C9A8') });
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(.30*sc_,.34*sc_,.62*ht,7), m);
+    torso.position.y = .55*ht; g.add(torso);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(.24,10,8), skin);
+    head.position.y = 1.06*ht; g.add(head);
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(.253,10,6,0,Math.PI*2,0,Math.PI*0.46), m);
+    hair.position.y = 1.075*ht; g.add(hair);
+    const eyeMat = new THREE.MeshBasicMaterial({ color:0x2A2119 });
+    const eyeGeo = new THREE.SphereGeometry(.032,6,5);
+    [-.085,.085].forEach(ex => { const e = new THREE.Mesh(eyeGeo, eyeMat); e.position.set(ex,1.045*ht,.215); g.add(e); });
+    const sh = new THREE.Mesh(new THREE.CircleGeometry(.36*sc_,12),
+        new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:.13 }));
+    sh.rotation.x = -Math.PI/2; sh.position.y = .012; g.add(sh);
+    if (isMe){
+      const ring = new THREE.Mesh(new THREE.RingGeometry(.44,.52,20),
+          new THREE.MeshBasicMaterial({ color:new THREE.Color(color), transparent:true, opacity:.75, side:THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI/2; ring.position.y = .02; g.add(ring);
+    }
+    return g;
+  }
+
+  function label(name, statusText, items, accent){
+    const W = 420, lineH = 30;
+    const lines = items ? items.slice(0,3) : [];
+    const H = 54 + lines.length*lineH + (lines.length ? 12 : 0);
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d'), dark = env.dark();
+    g.fillStyle = dark ? 'rgba(27,33,40,.94)' : 'rgba(255,255,255,.95)';
+    g.strokeStyle = dark ? 'rgba(72,82,95,1)' : 'rgba(200,208,218,1)'; g.lineWidth = 2;
+    const rr=(x,y,w,h,rad)=>{g.beginPath();g.moveTo(x+rad,y);g.arcTo(x+w,y,x+w,y+h,rad);g.arcTo(x+w,y+h,x,y+h,rad);
+      g.arcTo(x,y+h,x,y,rad);g.arcTo(x,y,x+w,y,rad);g.closePath();};
+    rr(2,2,W-4,H-4,14); g.fill(); g.stroke();
+    g.fillStyle = dark ? '#E7EBF0' : '#191E25';
+    g.font = '700 21px "Zen Maru Gothic", sans-serif'; g.fillText(name, 18, 32);
+    g.font = '500 15px "Zen Kaku Gothic New", sans-serif'; g.fillStyle = accent;
+    g.fillText(statusText, W - 18 - g.measureText(statusText).width, 32);
+    lines.forEach((it,i)=>{
+      g.fillStyle = it.s==='stuck' ? '#A85B55' : (dark ? '#AFBAC6' : '#4A5563');
+      g.font = '400 16px "Zen Kaku Gothic New", sans-serif';
+      const mark = it.s==='done' ? '✓ ' : (it.s==='stuck' ? '⚠ ' : '◻ ');
+      let txt = mark + it.t + (it.days ? `（${it.days}日）` : '');
+      while (g.measureText(txt).width > W-36 && txt.length > 4) txt = txt.slice(0,-2)+'…';
+      g.fillText(txt, 18, 54 + i*lineH + 14);
+    });
+    const tex = new THREE.CanvasTexture(c); tex.needsUpdate = true;
+    return { tex, aspect: W/H };
+  }
+
+  return {
+    mount(host){
+      r = new THREE.WebGLRenderer({ antialias:true, powerPreference:'low-power' });
+      r.setPixelRatio(Math.min(devicePixelRatio, env.touch ? 1.25 : 1.5));
+      host.appendChild(r.domElement);
+      sc = new THREE.Scene();
+      cam = new THREE.PerspectiveCamera(38, 16/9, .5, 120);
+      sc.add(new THREE.AmbientLight(0xffffff, .70));
+      sun = new THREE.DirectionalLight(0xfff0d8, .80); sun.position.set(8,14,6); sc.add(sun);
+      const fill = new THREE.DirectionalLight(0xc2d8e8, .30); fill.position.set(-6,5,-6); sc.add(fill);
+
+      mat = {
+        floor: new THREE.MeshLambertMaterial({ color:0xd8cdbc }),
+        meet:  new THREE.MeshLambertMaterial({ color:0xe6dccb }),
+        focus: new THREE.MeshLambertMaterial({ color:0xd2dae0 }),
+        wall:  new THREE.MeshLambertMaterial({ color:0xc4cbd3 }),
+        prop:  new THREE.MeshLambertMaterial({ color:0xb9a98f }),
+        seat:  new THREE.MeshLambertMaterial({ color:0xa8b4bd }),
+        accent:new THREE.MeshLambertMaterial({ color:0xC8873C }),
+        cool:  new THREE.MeshLambertMaterial({ color:0x4F8299 }),
+      };
+
+      ground = new THREE.Mesh(new THREE.PlaneGeometry(90,90), new THREE.MeshLambertMaterial({ color:0xc9d1d8 }));
+      ground.rotation.x = -Math.PI/2; ground.position.set(World.GRID.w/2, -.04, World.GRID.h/2); sc.add(ground);
+
+      floor = new THREE.Mesh(new THREE.PlaneGeometry(World.GRID.w, World.GRID.h), mat.floor);
+      floor.rotation.x = -Math.PI/2; floor.position.set(World.GRID.w/2, 0, World.GRID.h/2); sc.add(floor);
+      World.AREAS.forEach(a=>{
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(a.w,a.h), a.kind==='MEETING'?mat.meet:mat.focus);
+        m.rotation.x = -Math.PI/2; m.position.set(a.x+a.w/2, .01, a.y+a.h/2); sc.add(m);
+      });
+
+      const wallH = 2.6, t = .3, G = World.GRID;
+      [[G.w/2,t/2,G.w,t],[G.w/2,G.h-t/2,G.w,t],[t/2,G.h/2,t,G.h],[G.w-t/2,G.h/2,t,G.h]]
+        .forEach(([cx,cz,w,d])=>{ const m = new THREE.Mesh(new THREE.BoxGeometry(w,wallH,d), mat.wall);
+          m.position.set(cx, wallH/2, cz); sc.add(m); });
+      const mw = World.AREAS[0];
+      part = new THREE.Mesh(new THREE.BoxGeometry(.2,.95,mw.h), new THREE.MeshLambertMaterial({color:0xb6bfc8}));
+      part.position.set(mw.x, .475, mw.y + mw.h/2); sc.add(part);
+
+      World.PROPS.forEach(([px,py,pw,ph],i)=>{
+        const h = i<2 ? .62 : .80;
+        const m = new THREE.Mesh(new THREE.BoxGeometry(pw*.9,h,ph*.9), mat.prop);
+        m.position.set(px+pw/2, h/2, py+ph/2); sc.add(m);
+      });
+
+      /* 置いてあるものは Registry に描かせる。ここに種別ごとの分岐は書かない */
+      objectRoot = new THREE.Group(); sc.add(objectRoot);
+      World.objects.forEach(o=>{
+        const def = Registry.get(o.kind);
+        const node = def && def.build3d && def.build3d(o, mat, THREE);
+        if (node){ node.position.set(o.x+.5, 0, o.y+.5); objectRoot.add(node); }
+      });
+
+      meG = avatar(World.me.color, World.me.body, true); sc.add(meG);
+      npcG = World.npcs.map(n => { const g = avatar(n.color, n.body, false); sc.add(g); return g; });
+      const ringGeo = new THREE.RingGeometry(.46,.56,22);
+      rings = World.npcs.map(()=>{
+        const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color:0xc8873c, transparent:true, opacity:.9, side:THREE.DoubleSide }));
+        m.rotation.x = -Math.PI/2; m.position.y = .03; m.visible = false; sc.add(m); return m;
+      });
+      labels = World.npcs.map(()=>{ const s = new THREE.Sprite(new THREE.SpriteMaterial({ transparent:true, depthTest:false })); s.center.set(.5,0); sc.add(s); return s; });
+      meLabel = new THREE.Sprite(new THREE.SpriteMaterial({ transparent:true, depthTest:false })); meLabel.center.set(.5,0); sc.add(meLabel);
+      this.theme();
+    },
+
+    theme(){
+      if (!mat) return;
+      const dark = env.dark();
+      mat.floor.color.set(env.css('--floor')); mat.wall.color.set(env.css('--wall'));
+      mat.meet.color.set(dark ? 0x574c3c : 0xe6dccb);
+      mat.focus.color.set(dark ? 0x3d4750 : 0xd2dae0);
+      mat.prop.color.set(dark ? 0x6b5f4c : 0xb9a98f);
+      mat.seat.color.set(dark ? 0x55606a : 0xa8b4bd);
+      part.material.color.set(dark ? 0x515c66 : 0xb6bfc8);
+      ground.material.color.set(dark ? 0x171d24 : 0xc9d1d8);
+      sun.intensity = dark ? .55 : .80;
+      sc.background = new THREE.Color(env.css('--sky-a'));
+    },
+
+    render(){
+      const me = World.me;
+      const portrait = cam.aspect < 0.95;
+      cam.position.set(me.x + .01, portrait ? 19.5 : 15.0, me.y + (portrait ? 9.2 : 12.6));
+      cam.lookAt(me.x, 0, me.y + (portrait ? -0.6 : -1.6));
+      meG.position.set(me.x, 0, me.y); meG.rotation.y = me.dir;
+
+      const near = new Set(World.nearbyPeople().map(p => p.i));
+      const theme = env.dark() ? 'd' : 'l';
+      World.npcs.forEach((n,i)=>{
+        npcG[i].position.set(n.x, 0, n.y);
+        rings[i].visible = near.has(i);
+        rings[i].position.set(n.x, .03, n.y);
+        const sp = labels[i], showCard = near.has(i);
+        const key = n.name+'|'+n.status+'|'+showCard+'|'+theme;
+        if (labelCache.get(sp) !== key){
+          const L = label(n.name, STATUS_JA[n.status], showCard ? n.card : null,
+            n.status==='open' ? '#5F8C6B' : (n.status==='meet' ? '#C8873C' : '#4F8299'));
+          sp.material.map = L.tex; sp.material.needsUpdate = true;
+          sp.scale.set(2.5, 2.5/L.aspect, 1); labelCache.set(sp, key);
+        }
+        sp.position.set(n.x, 1.55, n.y);
+      });
+      const st = Store.get();
+      const meKey = me.name+'|'+st.status+'|'+theme;
+      if (labelCache.get(meLabel) !== meKey){
+        const L = label(me.name+'（あなた）', STATUS_JA[st.status], null, '#C8873C');
+        meLabel.material.map = L.tex; meLabel.material.needsUpdate = true;
+        meLabel.scale.set(2.5, 2.5/L.aspect, 1); labelCache.set(meLabel, meKey);
+      }
+      meLabel.position.set(me.x, 1.55, me.y);
+      r.render(sc, cam);
+    },
+
+    resize(w,h){
+      if (!r) return;
+      r.setSize(w,h,false);
+      cam.aspect = w/h; cam.fov = (w/h) < .95 ? 40 : 38; cam.updateProjectionMatrix();
+    },
+    pick(nx, ny){                    // 正規化座標 → 床の位置
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2(nx, ny), cam);
+      const hit = ray.intersectObject(floor)[0];
+      return hit ? { x: hit.point.x, y: hit.point.z } : null;
+    },
+    el: () => r && r.domElement,
+    stats: () => r ? { calls: r.info.render.calls, tris: r.info.render.triangles } : { calls:0, tris:0 },
+    unmount(){ if (r){ r.dispose(); r.domElement.remove(); r = null; } },
+  };
 }
 
-/* --- プレビュー --- */
-let pv = null;
-function initPreview(){
-  const cv = document.getElementById('mkCanvas');
-  const r = new THREE.WebGLRenderer({ canvas:cv, antialias:true, alpha:true });
+/* ===== 8. Adapter B: 2D（Canvas 2D）— 同じ World を見下ろしで描く ======== */
+function FlatRenderer(){
+  let cv, g;
+  const T = () => {
+    const wide = !env.small();
+    const padL = wide ? 240 : 12, padR = wide ? 312 : 12, padT = 16, padB = 86;
+    const W = cv.clientWidth, H = cv.clientHeight;
+    const availW = Math.max(120, W-padL-padR), availH = Math.max(120, H-padT-padB);
+    const ts = Math.min(availW/World.GRID.w, availH/World.GRID.h);
+    const ox = padL + (availW - World.GRID.w*ts)/2, oy = padT + (availH - World.GRID.h*ts)/2;
+    return { ts, px:(x)=>ox+x*ts, py:(y)=>oy+y*ts, ox, oy, W, H };
+  };
+  return {
+    mount(host){ cv = document.createElement('canvas'); cv.style.display='none'; host.appendChild(cv); g = cv.getContext('2d'); },
+    render(){
+      const dpr = Math.min(devicePixelRatio,2), W = cv.clientWidth, H = cv.clientHeight;
+      if (cv.width !== W*dpr || cv.height !== H*dpr){ cv.width = W*dpr; cv.height = H*dpr; }
+      g.setTransform(dpr,0,0,dpr,0,0);
+      const t = T(), { ts, px, py } = t;
+      g.fillStyle = env.css('--surface-2'); g.fillRect(0,0,W,H);
+      g.fillStyle = env.css('--floor'); g.fillRect(px(0),py(0),World.GRID.w*ts,World.GRID.h*ts);
+      World.AREAS.forEach(a=>{
+        g.fillStyle = a.kind==='MEETING' ? env.css('--accent-soft') : env.css('--cool-soft');
+        g.fillRect(px(a.x),py(a.y),a.w*ts,a.h*ts);
+        g.fillStyle = env.css('--muted'); g.font = `500 ${Math.max(10,ts*.34)}px "Zen Kaku Gothic New",sans-serif`;
+        g.fillText(a.name, px(a.x)+6, py(a.y)+ts*.62);
+      });
+      g.strokeStyle = env.css('--line'); g.lineWidth = 1;
+      for(let x=0;x<=World.GRID.w;x++){ g.beginPath(); g.moveTo(px(x),py(0)); g.lineTo(px(x),py(World.GRID.h)); g.stroke(); }
+      for(let y=0;y<=World.GRID.h;y++){ g.beginPath(); g.moveTo(px(0),py(y)); g.lineTo(px(World.GRID.w),py(y)); g.stroke(); }
+      g.fillStyle = env.css('--wall');
+      World.blocked.forEach(k=>{ const [x,y]=k.split(',').map(Number); g.fillRect(px(x),py(y),ts,ts); });
+
+      /* 置いてあるものは Registry に描かせる */
+      World.objects.forEach(o=>{
+        const def = Registry.get(o.kind);
+        if (def && def.draw2d) def.draw2d(o, g, t, env);
+      });
+
+      const dot = (x,y,color,name,ring)=>{
+        if (ring){ g.beginPath(); g.arc(px(x),py(y),ts*.52,0,7); g.strokeStyle=env.css('--accent'); g.lineWidth=2.5; g.stroke(); }
+        g.beginPath(); g.arc(px(x),py(y),ts*.33,0,7); g.fillStyle=color; g.fill();
+        g.font = `500 ${Math.max(9,ts*.28)}px "Zen Kaku Gothic New",sans-serif`; g.textAlign='center';
+        g.lineWidth = 3; g.strokeStyle = env.css('--floor'); g.strokeText(name, px(x), py(y)-ts*.5);
+        g.fillStyle = env.css('--ink'); g.fillText(name, px(x), py(y)-ts*.5); g.textAlign='left';
+      };
+      const near = new Set(World.nearbyPeople().map(p=>p.i));
+      World.npcs.forEach((n,i)=> dot(n.x,n.y,n.color,n.name.split(' ')[0], near.has(i)));
+      dot(World.me.x, World.me.y, World.me.color, 'あなた', false);
+    },
+    resize(){},
+    pickFromClient(cx, cy){
+      const t = T();
+      return { x:(cx - t.ox)/t.ts, y:(cy - t.oy)/t.ts };
+    },
+    el: () => cv,
+    stats: () => ({ calls:0, tris:0 }),
+    unmount(){ if (cv){ cv.remove(); cv = null; } },
+  };
+}
+
+/* ===== 9. Adapter C: リスト（DOM のみ・描画なし） ======================== */
+function ListRenderer(){
+  let host, last = 0;
+  return {
+    mount(el){ host = el; },
+    render(now){
+      if (now - last < 500) return; last = now;
+      const st = Store.get();
+      const near = new Set(World.nearbyPeople().map(p=>p.i));
+      const rows = [{ ...World.me, status: st.status, isMe:true }, ...World.npcs];
+      const people = rows.map((p,idx)=>{
+        const items = (p.card||[]).map(it=>{
+          const mark = it.s==='done' ? '✓' : (it.s==='stuck' ? '⚠' : '◻');
+          const flag = it.days ? ` <span style="color:var(--stuck);font-weight:700">${it.days}日動いていない</span>` : '';
+          return `<li>${mark} ${it.t}${flag}</li>`;
+        }).join('');
+        return `<div class="listRow">
+          <span class="av" style="background:${p.color}"></span>
+          <div><h4>${p.name}${p.isMe?'<span style="color:var(--muted);font-weight:400;font-size:12px">（あなた）</span>':''}</h4>
+          <ul>${items}</ul></div>
+          <div style="display:flex;flex-direction:column;gap:7px;align-items:flex-end">
+            <span class="st ${p.status}">${STATUS_JA[p.status]}</span>
+            ${!p.isMe && near.has(idx-1) ? '<span class="meta" style="color:var(--accent)">近くにいます</span>' : ''}
+          </div></div>`;
+      }).join('');
+      /* 置いてあるものも Registry に出させる */
+      const objs = World.objects.map(o=>{
+        const def = Registry.get(o.kind);
+        return def && def.listRow ? def.listRow(o) : '';
+      }).filter(Boolean).join('');
+      host.innerHTML = people + (objs ? `<div style="font-size:11.5px;color:var(--muted);margin:14px 0 2px"
+        class="mono">部屋にあるもの</div>${objs}` : '');
+    },
+    resize(){}, el: () => null, stats: () => ({ calls:0, tris:0 }), unmount(){},
+  };
+}
+
+const STATUS_JA = { open:'オープン', focus:'集中中', meet:'会議中', away:'離席' };
+
+/* ===== 10. Registry の中身 — ここに足すだけで3表現すべてに出る ========== */
+Registry.define('seat', {
+  action({ obj, store }){
+    const onIt = World.objectAt(World.me.x, World.me.y) === obj;
+    if (!onIt) return { label:'座る', sub:'席の上まで歩く', enabled:false, run(){} };
+    if (store.status === 'focus') return { label:'座る', sub:'集中中は座れません', enabled:false, run(){} };
+    return { label:'座る', sub:'この席に', run: () => Systems.conversation.sit(obj) };
+  },
+  build3d(o, mat, T){ const m = new T.Mesh(new T.BoxGeometry(.62,.16,.62), mat.seat); m.position.y = .08; return m; },
+  draw2d(o, g, t){ g.fillStyle = env.css('--line'); g.fillRect(t.px(o.x)+t.ts*.2, t.py(o.y)+t.ts*.2, t.ts*.6, t.ts*.6); },
+});
+
+Registry.define('note', {
+  action({ obj }){ return { label:'読む', sub:'貼り紙', run: () => Ui.overlay(obj.data.title, obj.data.body) }; },
+  build3d(o, mat, T){
+    const g = new T.Group();
+    const post = new T.Mesh(new T.CylinderGeometry(.05,.05,1.0,6), mat.prop); post.position.y = .5; g.add(post);
+    const board = new T.Mesh(new T.BoxGeometry(.9,.6,.08), mat.accent); board.position.y = 1.15; g.add(board);
+    return g;
+  },
+  draw2d(o, g, t){
+    g.fillStyle = env.css('--accent');
+    g.fillRect(t.px(o.x)+t.ts*.22, t.py(o.y)+t.ts*.22, t.ts*.56, t.ts*.56);
+  },
+  listRow(o){ return `<div class="listRow"><span class="av" style="background:var(--accent)"></span>
+    <div><h4>${o.data.title}</h4><ul><li>貼り紙。近づいて「読む」</li></ul></div><div></div></div>`; },
+});
+
+Registry.define('board', {
+  action({ obj }){
+    return { label:'見る', sub:'チームの今週', run: () => {
+      const rows = [{ ...World.me, status: Store.get().status }, ...World.npcs].map(p=>{
+        const items = (p.card||[]).map(it=>{
+          const mark = it.s==='done' ? '✓' : (it.s==='stuck' ? '⚠' : '◻');
+          const flag = it.days ? `<span style="color:var(--stuck);font-weight:700"> ${it.days}日</span>` : '';
+          return `<div style="padding-left:2px">${mark} ${it.t}${flag}</div>`;
+        }).join('');
+        return `<div class="card"><div class="who"><span class="av" style="background:${p.color}"></span>${p.name}</div>${items}</div>`;
+      }).join('');
+      const stuck = [World.me, ...World.npcs].flatMap(p => (p.card||[]).filter(i=>i.s==='stuck')).length;
+      Ui.overlay('チームの今週',
+        `<div class="note" style="margin-bottom:12px">3日以上動いていない項目: <b>${stuck}件</b>。
+         担当者名は出しません。「誰か知ってる人いる?」と聞くための表示です。</div>${rows}`);
+    }};
+  },
+  build3d(o, mat, T){
+    const g = new T.Group();
+    const leg = new T.Mesh(new T.BoxGeometry(1.4,.08,.5), mat.prop); leg.position.y = .04; g.add(leg);
+    const panel = new T.Mesh(new T.BoxGeometry(1.5,1.0,.1), mat.cool); panel.position.y = .6; g.add(panel);
+    return g;
+  },
+  draw2d(o, g, t){
+    g.fillStyle = env.css('--cool');
+    g.fillRect(t.px(o.x)+t.ts*.12, t.py(o.y)+t.ts*.3, t.ts*.76, t.ts*.4);
+  },
+  listRow(o){ return `<div class="listRow"><span class="av" style="background:var(--cool)"></span>
+    <div><h4>${o.data.title}</h4><ul><li>近づいて「見る」でチーム全員のカードが並びます</li></ul></div><div></div></div>`; },
+});
+
+/* ===== 11. Adapter D: UI（DOM） ========================================== */
+const Ui = (() => {
+  const $ = id => document.getElementById(id);
+  let toastT;
+
+  function toast(msg){
+    const el = $('toast'); el.textContent = msg; el.classList.add('on');
+    clearTimeout(toastT); toastT = setTimeout(()=> el.classList.remove('on'), 2400);
+  }
+  function overlay(title, html){
+    $('ovTitle').textContent = title; $('ovBody').innerHTML = html; $('overlay').hidden = false;
+  }
+  function closeOverlay(){ $('overlay').hidden = true; }
+
+  function renderPanel(){
+    const st = Store.get();
+    const mine = World.me.card.map((it,i)=>`
+      <label class="fitem ${it.s==='done'?'done':''}">
+        <input type="checkbox" ${it.s==='done'?'checked':''} data-i="${i}">
+        <span>${it.t}</span>${it.days?`<span class="flag">${it.days}日</span>`:''}
+      </label>`).join('');
+    const members = World.npcs.map(n=>`
+      <div class="memb"><span class="av" style="background:${n.color}"></span><span>${n.name}</span>
+        <span class="st ${n.status}">${STATUS_JA[n.status]}</span></div>`).join('');
+    $('panelBody').innerHTML = `
+      <div class="card"><div class="who"><span class="av" style="background:${World.me.color}"></span>${World.me.name}</div>${mine}</div>
+      <div style="font-size:11.5px;color:var(--muted);margin:16px 0 6px;letter-spacing:.08em" class="mono">いま居る人（${World.npcs.length}）</div>
+      ${members}
+      <div class="note" style="margin-top:16px">個人の在席時間は記録していません。管理者にも見えません。</div>`;
+    $('panelBody').querySelectorAll('input[type=checkbox]').forEach(cb=>{
+      cb.onchange = ()=>{ const it = World.me.card[+cb.dataset.i];
+        it.s = cb.checked ? 'done' : 'open'; if (cb.checked) delete it.days; renderPanel(); };
+    });
+  }
+
+  /** 下部バーと FAB は Systems.interaction.resolve() だけを見る */
+  function renderAction(){
+    const a = Systems.interaction.resolve();
+    $('fabTxt').textContent = a.label; $('fabSub').textContent = a.sub;
+    $('fab').disabled = !a.enabled;
+    $('fab').classList.toggle('leave', a.label === '立つ' || a.label === '終える');
+    $('leaveBtn').textContent = a.label === '—' ? '—' : a.label;
+    $('leaveBtn').disabled = !a.enabled;
+  }
+
+  function renderCall(){
+    const inCall = Systems.conversation.inCall();
+    $('micBtn').classList.toggle('live', inCall);
+    $('micBtn').classList.toggle('off', !inCall);
+    $('micTxt').textContent = inCall ? 'マイク接続中' : 'マイク未接続';
+    $('barHint').textContent = inCall ? '通話中だけマイクを掴んでいます' : '通話していない間はマイクに接続していません';
+  }
+
+  function renderStats(fps, ms, stats){
+    $('hFps').textContent = Store.get().mode === 'list' ? '—' : fps;
+    $('hMs').textContent  = ms.toFixed(1) + ' ms';
+    $('hCalls').textContent = stats.calls;
+    $('hTris').textContent  = stats.tris ? stats.tris.toLocaleString() : '0';
+  }
+
+  return { $, toast, overlay, closeOverlay, renderPanel, renderAction, renderCall, renderStats };
+})();
+
+/* ===== 12. Adapter E: 入力 ============================================== */
+function InputAdapter(stageEl, onPick, onAction){
+  const keys = {};
+  let dragging = false;
+
+  addEventListener('keydown', e=>{
+    if (Store.get().screen !== 3) return;
+    if (e.key === 'Escape'){ Ui.closeOverlay(); return; }
+    keys[e.key.toLowerCase()] = true;
+    if (e.key.toLowerCase() === 'e'){ e.preventDefault(); onAction(); }
+    if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault();
+  });
+  addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+
+  stageEl.addEventListener('pointerdown', e=>{
+    dragging = true; try { stageEl.setPointerCapture(e.pointerId); } catch(_){}
+    onPick(e);
+  });
+  stageEl.addEventListener('pointermove', e=>{ if (dragging) onPick(e); });
+  ['pointerup','pointercancel'].forEach(ev => stageEl.addEventListener(ev, e=>{
+    dragging = false; try { stageEl.releasePointerCapture(e.pointerId); } catch(_){}
+  }));
+
+  return {
+    axis(){
+      let dx = 0, dy = 0;
+      if (keys['w']||keys['arrowup'])    dy -= 1;
+      if (keys['s']||keys['arrowdown'])  dy += 1;
+      if (keys['a']||keys['arrowleft'])  dx -= 1;
+      if (keys['d']||keys['arrowright']) dx += 1;
+      return { dx, dy };
+    },
+  };
+}
+
+/* ===== 13. アバター作成のプレビュー（独立した小さな3D） ================== */
+function AvatarPreview(canvas){
+  const r = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
   r.setPixelRatio(Math.min(devicePixelRatio,2));
   const sc = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(32, 1, .1, 50);
   cam.position.set(2.4, 2.15, 4.3); cam.lookAt(0, .82, 0);
-  sc.add(new THREE.AmbientLight(0xffffff, .72));
-  const dl = new THREE.DirectionalLight(0xfff2dc, .85); dl.position.set(3,6,4); sc.add(dl);
-  const pl = new THREE.DirectionalLight(0xbcd4e6, .35); pl.position.set(-4,2,-3); sc.add(pl);
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(1.25,1.25,.1,26),
-      new THREE.MeshLambertMaterial({ color:0xffffff }));
+  sc.add(new THREE.AmbientLight(0xffffff,.72));
+  const dl = new THREE.DirectionalLight(0xfff2dc,.85); dl.position.set(3,6,4); sc.add(dl);
+  const pl = new THREE.DirectionalLight(0xbcd4e6,.35); pl.position.set(-4,2,-3); sc.add(pl);
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(1.25,1.25,.1,26), new THREE.MeshLambertMaterial({color:0xffffff}));
   disc.position.y = -.05; sc.add(disc);
-  pv = { r, sc, cam, disc, av:null };
-  rebuildPreview();
-  const loop = () => {
-    const w = cv.clientWidth || 1;
-    if (cv.width !== w * Math.min(devicePixelRatio,2)) r.setSize(w, w, false);
-    if (pv.av && !reduceMotion) pv.av.rotation.y += .0075;
+  let av = null;
+  const three = ThreeRenderer();   // アバター生成だけ借りる用ではなく、専用に持つ
+  function rebuild(){
+    if (av) sc.remove(av);
+    const g = new THREE.Group();
+    const body = World.me.body, color = World.me.color;
+    const s = [1,.86,1.14][body], ht = [1,1.12,.92][body];
+    const m = new THREE.MeshLambertMaterial({ color:new THREE.Color(color) });
+    const skin = new THREE.MeshLambertMaterial({ color:new THREE.Color('#E8C9A8') });
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(.30*s,.34*s,.62*ht,7), m); torso.position.y = .55*ht; g.add(torso);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(.24,10,8), skin); head.position.y = 1.06*ht; g.add(head);
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(.253,10,6,0,Math.PI*2,0,Math.PI*.46), m); hair.position.y = 1.075*ht; g.add(hair);
+    const eyeMat = new THREE.MeshBasicMaterial({color:0x2A2119}), eyeGeo = new THREE.SphereGeometry(.032,6,5);
+    [-.085,.085].forEach(ex=>{ const e = new THREE.Mesh(eyeGeo,eyeMat); e.position.set(ex,1.045*ht,.215); g.add(e); });
+    g.rotation.y = .5; av = g; sc.add(g);
+    disc.material.color.set(env.css('--surface') || '#fff');
+  }
+  function loop(){
+    const w = canvas.clientWidth || 1;
+    if (canvas.width !== w * Math.min(devicePixelRatio,2)) r.setSize(w, w, false);
+    if (av && !env.reduceMotion) av.rotation.y += .0075;
     r.render(sc, cam);
     requestAnimationFrame(loop);
-  };
-  loop();
-}
-function rebuildPreview(){
-  if (!pv) return;
-  if (pv.av) pv.sc.remove(pv.av);
-  pv.av = buildAvatar(state.me.color, state.me.body, false);
-  pv.av.rotation.y = .5;
-  pv.sc.add(pv.av);
-  onThemeChange();
-}
-function onThemeChange(){
-  const g = new THREE.Color(cssVar('--surface-2') || '#f0f0f0');
-  if (pv){ pv.disc.material.color.set(cssVar('--surface') || '#fff'); }
-  if (three){ three.sc.background = new THREE.Color(cssVar('--sky-a')); three.applyPalette(); }
-  if (state.screen === 3 && state.mode === '2d') draw2D();
+  }
+  rebuild(); loop();
+  return { rebuild };
 }
 
-/* =========================================================================
-   ステップ2: チーム
-   ========================================================================= */
-function renderTeams(){
-  const el = document.getElementById('teamList'); el.innerHTML = '';
-  TEAMS.forEach(t => {
-    const b = document.createElement('button'); b.className = 'team';
-    const inRoom = t.id === 'prod' ? 4 : (t.id==='dsn' ? 2 : 1);
-    const pips = Array.from({length:inRoom}, (_,i)=>
-      `<span class="pip" style="background:${COLORS[(i+1)%COLORS.length]}"></span>`).join('');
-    b.innerHTML = `
-      <h3>${t.name}</h3>
-      <p class="desc">${t.desc}</p>
-      <div class="pips">${pips}</div>
-      <div class="teamfoot">
-        <span class="meta">在室 ${inRoom}人</span>
-        ${t.stuck ? `<span class="stuck-chip">詰まり ${t.stuck}件</span>` : `<span class="meta">詰まりなし</span>`}
-      </div>`;
-    b.onclick = () => { state.team = t; enterRoom(); };
-    el.appendChild(b);
+/* ===== 14. 合成ルート — 全部を知っているのはここだけ ===================== */
+(function boot(){
+  const $ = Ui.$;
+  const stage = $('stage');
+  const renderers = { '3d': ThreeRenderer(), '2d': FlatRenderer(), 'list': ListRenderer() };
+  let mounted = false;
+  let preview = null;
+
+  /* --- 画面遷移 --- */
+  function go(n){
+    Store.set({ screen:n });
+    [1,2,3].forEach(i => $('s'+i).classList.toggle('on', i===n));
+    [...$('steps').querySelectorAll('.step')].forEach(el=>{
+      const s = +el.dataset.s; el.classList.toggle('on', s===n); el.classList.toggle('done', s<n);
+    });
+    if (n===3) requestAnimationFrame(resize);
+    scrollTo(0,0);
+  }
+
+  /* --- ステップ1: アバター --- */
+  const COLORS = ['#C8873C','#4F8299','#7A6FA8','#5F8C6B','#B25F6A','#8A7B5E'];
+  COLORS.forEach((c,i)=>{
+    const b = document.createElement('button');
+    b.className='sw'; b.style.background=c; b.setAttribute('aria-pressed', i===0);
+    b.setAttribute('aria-label','色 '+(i+1));
+    b.onclick = ()=>{ World.me.color = c;
+      [...$('colorOpts').children].forEach((el,j)=>el.setAttribute('aria-pressed', j===i));
+      preview && preview.rebuild(); };
+    $('colorOpts').appendChild(b);
   });
-}
-
-/* =========================================================================
-   表現レイヤー A: 3D（Three.js）
-   ========================================================================= */
-let three = null;
-function initThree(){
-  const host = document.getElementById('stage');
-  const r = new THREE.WebGLRenderer({ antialias:true, powerPreference:'low-power' });
-  // 解像度スケーリングの土台。タッチ端末（＝多くはモバイルGPU）ではさらに抑える
-  r.setPixelRatio(Math.min(devicePixelRatio, TOUCH ? 1.25 : 1.5));
-  host.appendChild(r.domElement);
-
-  const sc = new THREE.Scene();
-  const cam = new THREE.PerspectiveCamera(38, 16/9, .5, 90);   // 固定クォータービュー
-  sc.add(new THREE.AmbientLight(0xffffff, .70));
-  const sun = new THREE.DirectionalLight(0xfff0d8, .80); sun.position.set(8,14,6); sc.add(sun);
-  const fill = new THREE.DirectionalLight(0xc2d8e8, .30); fill.position.set(-6,5,-6); sc.add(fill);
-
-  const M = {
-    floor: new THREE.MeshLambertMaterial({ color:0xd8cdbc }),
-    meet:  new THREE.MeshLambertMaterial({ color:0xe6dccb }),
-    focus: new THREE.MeshLambertMaterial({ color:0xd2dae0 }),
-    wall:  new THREE.MeshLambertMaterial({ color:0xc4cbd3 }),
-    prop:  new THREE.MeshLambertMaterial({ color:0xb9a98f }),
-    seat:  new THREE.MeshLambertMaterial({ color:0xa8b4bd }),
+  $('bodyOpts').onclick = e=>{
+    const b = e.target.closest('[data-b]'); if(!b) return;
+    World.me.body = +b.dataset.b;
+    [...b.parentNode.children].forEach(el=>el.setAttribute('aria-pressed', el===b));
+    preview && preview.rebuild();
   };
+  $('nameIn').oninput = e => { World.me.name = e.target.value || '名無し'; };
+  $('toTeams').onclick = ()=>{ renderTeams(); go(2); };
 
-  // 部屋の外側の地面。縦画面では視界が部屋の外まで届くため、背景色の抜けを防ぐ
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(90, 90),
-      new THREE.MeshLambertMaterial({ color:0xc9d1d8 }));
-  ground.rotation.x = -Math.PI/2; ground.position.set(GRID.w/2, -0.04, GRID.h/2); sc.add(ground);
-
-  // 床（エリアごとに色を変える）
-  const floorG = new THREE.PlaneGeometry(GRID.w, GRID.h);
-  const floor = new THREE.Mesh(floorG, M.floor);
-  floor.rotation.x = -Math.PI/2; floor.position.set(GRID.w/2, 0, GRID.h/2); sc.add(floor);
-  AREAS.forEach(a=>{
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(a.w, a.h), a.kind==='MEETING'?M.meet:M.focus);
-    m.rotation.x = -Math.PI/2; m.position.set(a.x + a.w/2, .01, a.y + a.h/2); sc.add(m);
-  });
-
-  // 壁（4枚のボックスに集約＝ドローコールを増やさない）
-  const wallH = 2.6, t = .3;
-  const walls = [
-    [GRID.w/2, GRID.h*0+t/2, GRID.w, t],[GRID.w/2, GRID.h-t/2, GRID.w, t],
-    [t/2, GRID.h/2, t, GRID.h],[GRID.w-t/2, GRID.h/2, t, GRID.h],
+  /* --- ステップ2: チーム --- */
+  const TEAMS = [
+    { id:'prod', name:'プロダクト開発', desc:'決済まわりと新規機能。今週は請求バッチの調査が止まっています。', stuck:3, inRoom:4 },
+    { id:'dsn',  name:'デザイン',       desc:'オンボーディングの見直しと、社内向けの図版づくり。',           stuck:0, inRoom:2 },
+    { id:'sales',name:'セールス',       desc:'期初の商談と、導入企業の情シス審査への同席。',                 stuck:1, inRoom:1 },
+    { id:'corp', name:'コーポレート',   desc:'採用と、来期の評価制度のたたき台づくり。',                     stuck:1, inRoom:1 },
   ];
-  walls.forEach(([cx,cz,w,d])=>{
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), M.wall);
-    m.position.set(cx, wallH/2, cz); sc.add(m);
-  });
-  // 会議室の間仕切り（腰高。中は見えるが音は出ない、という関係の可視化）
-  const mw = AREAS[0];
-  const part = new THREE.Mesh(new THREE.BoxGeometry(.2, .95, mw.h), new THREE.MeshLambertMaterial({color:0xb6bfc8}));
-  part.position.set(mw.x, .475, mw.y + mw.h/2); sc.add(part);
+  function renderTeams(){
+    const el = $('teamList'); el.innerHTML = '';
+    TEAMS.forEach(t=>{
+      const b = document.createElement('button'); b.className = 'team';
+      const pips = Array.from({length:t.inRoom},(_,i)=>`<span class="pip" style="background:${COLORS[(i+1)%COLORS.length]}"></span>`).join('');
+      b.innerHTML = `<h3>${t.name}</h3><p class="desc">${t.desc}</p><div class="pips">${pips}</div>
+        <div class="teamfoot"><span class="meta">在室 ${t.inRoom}人</span>
+        ${t.stuck ? `<span class="stuck-chip">詰まり ${t.stuck}件</span>` : `<span class="meta">詰まりなし</span>`}</div>`;
+      b.onclick = ()=> enterRoom(t);
+      el.appendChild(b);
+    });
+  }
 
-  // 家具
-  PROPS.forEach(([px,py,pw,ph],i)=>{
-    const h = i < 2 ? .62 : .80;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(pw*.9, h, ph*.9), M.prop);
-    m.position.set(px + pw/2, h/2, py + ph/2); sc.add(m);
-  });
-  // 席（座布団）
-  SEATS.forEach(s=>{
-    const m = new THREE.Mesh(new THREE.BoxGeometry(.62,.16,.62), M.seat);
-    m.position.set(s.x+.5, .08, s.y+.5); sc.add(m);
-  });
-
-  // アバター
-  const meG = buildAvatar(state.me.color, state.me.body, true);
-  sc.add(meG);
-  const npcG = state.npcs.map(n => { const g = buildAvatar(n.color, n.body, false); sc.add(g); return g; });
-
-  // 近接リング（話しかけられます）
-  const ringGeo = new THREE.RingGeometry(.46,.56,22);
-  const rings = state.npcs.map(()=>{
-    const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color:0xc8873c, transparent:true, opacity:.9, side:THREE.DoubleSide }));
-    m.rotation.x = -Math.PI/2; m.position.y = .03; m.visible = false; sc.add(m); return m;
-  });
-
-  // 名札＋フォーカスカードの吹き出し（CanvasTexture のスプライト）
-  const labels = state.npcs.map(()=>{
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ transparent:true, depthTest:false }));
-    sp.center.set(.5,0); sc.add(sp); return sp;
-  });
-  const meLabel = new THREE.Sprite(new THREE.SpriteMaterial({ transparent:true, depthTest:false }));
-  meLabel.center.set(.5,0); sc.add(meLabel);
-
-  three = {
-    r, sc, cam, meG, npcG, rings, labels, meLabel, M, floor,
-    applyPalette(){
-      M.floor.color.set(cssVar('--floor')); M.wall.color.set(cssVar('--wall'));
-      const dark = document.documentElement.getAttribute('data-theme')==='dark'
-        || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
-      M.meet.color.set(dark ? 0x574c3c : 0xe6dccb);
-      M.focus.color.set(dark ? 0x3d4750 : 0xd2dae0);
-      M.prop.color.set(dark ? 0x6b5f4c : 0xb9a98f);
-      M.seat.color.set(dark ? 0x55606a : 0xa8b4bd);
-      part.material.color.set(dark ? 0x515c66 : 0xb6bfc8);
-      ground.material.color.set(dark ? 0x171d24 : 0xc9d1d8);
-      sun.intensity = dark ? .55 : .80;
+  /* --- ステップ3: 部屋 --- */
+  function enterRoom(team){
+    Store.set({ team });
+    $('panelSub').textContent = team.name + ' の部屋';
+    if (!mounted){
+      renderers['3d'].mount(stage);
+      renderers['2d'].mount(stage);
+      renderers['list'].mount($('listGrid'));
+      mounted = true;
+      loop();
     }
-  };
-  three.applyPalette();
-  sc.background = new THREE.Color(cssVar('--sky-a'));
-}
-
-/* 吹き出しテクスチャ */
-function makeLabel(name, statusText, items, accent){
-  const W = 420, lineH = 30;
-  const lines = items ? items.slice(0,3) : [];
-  const H = 54 + lines.length * lineH + (lines.length ? 12 : 0);
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const g = c.getContext('2d');
-  const dark = document.documentElement.getAttribute('data-theme')==='dark'
-    || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
-  g.fillStyle = dark ? 'rgba(27,33,40,.94)' : 'rgba(255,255,255,.95)';
-  g.strokeStyle = dark ? 'rgba(72,82,95,1)' : 'rgba(200,208,218,1)';
-  g.lineWidth = 2;
-  const rr = (x,y,w,h,r)=>{ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r);
-    g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); };
-  rr(2,2,W-4,H-4,14); g.fill(); g.stroke();
-  g.fillStyle = dark ? '#E7EBF0' : '#191E25';
-  g.font = '700 21px "Zen Maru Gothic", sans-serif';
-  g.fillText(name, 18, 32);
-  g.font = '500 15px "Zen Kaku Gothic New", sans-serif';
-  g.fillStyle = accent;
-  g.fillText(statusText, W - 18 - g.measureText(statusText).width, 32);
-  lines.forEach((it,i)=>{
-    const y = 54 + i*lineH + 14;
-    g.fillStyle = it.s==='stuck' ? '#A85B55' : (dark ? '#AFBAC6' : '#4A5563');
-    g.font = '400 16px "Zen Kaku Gothic New", sans-serif';
-    const mark = it.s==='done' ? '✓ ' : (it.s==='stuck' ? '⚠ ' : '◻ ');
-    let txt = mark + it.t + (it.days ? `（${it.days}日）` : '');
-    while (g.measureText(txt).width > W - 36 && txt.length > 4) txt = txt.slice(0,-2) + '…';
-    g.fillText(txt, 18, y);
-  });
-  const tex = new THREE.CanvasTexture(c);
-  tex.needsUpdate = true;
-  return { tex, aspect: W/H };
-}
-
-/* =========================================================================
-   表現レイヤー B: 2D（Canvas 2D）— 同じ論理データを見下ろしで描く
-   ========================================================================= */
-let cv2 = null;
-function init2D(){
-  cv2 = document.createElement('canvas');
-  cv2.style.display = 'none';
-  document.getElementById('stage').appendChild(cv2);
-}
-function draw2D(){
-  if (!cv2) return;
-  const host = document.getElementById('stage');
-  const W = host.clientWidth, H = host.clientHeight, dpr = Math.min(devicePixelRatio,2);
-  cv2.width = W*dpr; cv2.height = H*dpr; cv2.style.width = W+'px'; cv2.style.height = H+'px';
-  const g = cv2.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0);
-  const wide = !isSmall();
-  const padL = wide ? 240 : 12, padR = wide ? 312 : 12, padT = 16, padB = 86;
-  const availW = Math.max(120, W - padL - padR), availH = Math.max(120, H - padT - padB);
-  const ts = Math.min(availW/GRID.w, availH/GRID.h);
-  const ox = padL + (availW - GRID.w*ts)/2, oy = padT + (availH - GRID.h*ts)/2;
-  const px = (x)=> ox + x*ts, py = (y)=> oy + y*ts;
-
-  g.fillStyle = cssVar('--surface-2'); g.fillRect(0,0,W,H);
-  g.fillStyle = cssVar('--floor'); g.fillRect(px(0),py(0),GRID.w*ts,GRID.h*ts);
-  AREAS.forEach(a=>{
-    g.fillStyle = a.kind==='MEETING' ? cssVar('--accent-soft') : cssVar('--cool-soft');
-    g.fillRect(px(a.x),py(a.y),a.w*ts,a.h*ts);
-    g.fillStyle = cssVar('--muted'); g.font = `500 ${Math.max(10,ts*.34)}px "Zen Kaku Gothic New",sans-serif`;
-    g.fillText(a.name, px(a.x)+6, py(a.y)+ts*.62);
-  });
-  g.strokeStyle = cssVar('--line'); g.lineWidth = 1;
-  for(let x=0;x<=GRID.w;x++){ g.beginPath(); g.moveTo(px(x),py(0)); g.lineTo(px(x),py(GRID.h)); g.stroke(); }
-  for(let y=0;y<=GRID.h;y++){ g.beginPath(); g.moveTo(px(0),py(y)); g.lineTo(px(GRID.w),py(y)); g.stroke(); }
-  g.fillStyle = cssVar('--wall');
-  blocked.forEach(k=>{ const [x,y]=k.split(',').map(Number); g.fillRect(px(x),py(y),ts,ts); });
-  g.fillStyle = cssVar('--line');
-  SEATS.forEach(s=>{ g.fillRect(px(s.x)+ts*.2, py(s.y)+ts*.2, ts*.6, ts*.6); });
-
-  const dot = (x,y,color,name,ring)=>{
-    if (ring){ g.beginPath(); g.arc(px(x),py(y),ts*.52,0,7); g.strokeStyle=cssVar('--accent'); g.lineWidth=2.5; g.stroke(); }
-    g.beginPath(); g.arc(px(x),py(y),ts*.33,0,7); g.fillStyle=color; g.fill();
-    g.font = `500 ${Math.max(9,ts*.28)}px "Zen Kaku Gothic New",sans-serif`;
-    g.textAlign='center';
-    g.lineWidth = 3; g.strokeStyle = cssVar('--floor'); g.strokeText(name, px(x), py(y)-ts*.5);
-    g.fillStyle = cssVar('--ink'); g.fillText(name, px(x), py(y)-ts*.5);
-    g.textAlign='left';
-  };
-  state.npcs.forEach((n,i)=> dot(n.x,n.y,n.color,n.name.split(' ')[0], state.nearby.includes(i)));
-  dot(state.me.x, state.me.y, state.me.color, 'あなた', false);
-}
-
-/* =========================================================================
-   表現レイヤー C: リスト（DOM のみ・描画なし）
-   ========================================================================= */
-function drawList(){
-  const el = document.getElementById('listGrid');
-  const rows = [{...state.me, isMe:true}, ...state.npcs];
-  el.innerHTML = rows.map(p=>{
-    const items = (p.card||[]).map(it=>{
-      const mark = it.s==='done' ? '✓' : (it.s==='stuck' ? '⚠' : '◻');
-      const flag = it.days ? ` <span style="color:var(--stuck);font-weight:700">${it.days}日動いていない</span>` : '';
-      return `<li>${mark} ${it.t}${flag}</li>`;
-    }).join('');
-    const near = !p.isMe && state.nearby.includes(state.npcs.indexOf(p));
-    return `<div class="listRow">
-      <span class="av" style="background:${p.color}"></span>
-      <div>
-        <h4>${p.name}${p.isMe?'<span style="color:var(--muted);font-weight:400;font-size:12px">（あなた）</span>':''}</h4>
-        <ul>${items}</ul>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:7px;align-items:flex-end">
-        <span class="st ${p.status}">${STATUS_JA[p.status]}</span>
-        ${near ? '<span class="meta" style="color:var(--accent)">近くにいます</span>' : ''}
-      </div>
-    </div>`;
-  }).join('');
-}
-const STATUS_JA = { open:'オープン', focus:'集中中', meet:'会議中', away:'離席' };
-
-/* =========================================================================
-   部屋（共通ループ・入力・状態）
-   ========================================================================= */
-const keys = {};
-let moveTarget = null;
-addEventListener('keydown', e=>{
-  if (state.screen !== 3) return;
-  keys[e.key.toLowerCase()] = true;
-  if (e.key.toLowerCase() === 'e'){ e.preventDefault(); trySit(); }
-  if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault();
-});
-addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
-
-function enterRoom(){
-  go(3);
-  document.getElementById('panelSub').textContent = state.team.name + ' の部屋';
-  if (!three) { initThree(); init2D(); resize(); loop(); }
-  setMode('3d');
-  renderPanel();
-  toast(TOUCH
-    ? 'タップした場所へ歩きます。指を置いたまま動かすと追いかけます'
-    : `${state.team.name} の部屋に入りました`);
-}
-
-function trySit(){
-  if (state.me.status === 'focus'){ toast('集中中は席につけません。ステータスを変えてください'); return; }
-  const s = seatAt(state.me.x, state.me.y);
-  if (!s){ toast(TOUCH ? '席（四角い座布団）の上まで歩いてから押してください' : '席の上で E を押すと座れます'); return; }
-  if (state.seated === s.id) return;
-  state.seated = s.id;
-  const mates = state.npcs.filter(n => n.seat && SEATS.find(x=>x.id===n.seat)?.table === s.table);
-  state.inCall = true;
-  state.me.status = 'meet';
-  document.getElementById('statusSel').value = 'meet';
-  updateBar();
-  toast(mates.length ? `${mates.map(m=>m.name.split(' ')[0]).join('・')}さんと通話が始まりました` : '席につきました（まだ誰もいません）');
-}
-/* --- スマホ: 着席/離席の丸ボタン --- */
-const fab = document.getElementById('fab');
-fab.onclick = ()=>{ state.seated ? standUp() : trySit(); };
-function updateFab(){
-  const onSeat = !!seatAt(state.me.x, state.me.y);
-  const focusing = state.me.status === 'focus';
-  if (state.seated){
-    fab.classList.add('leave'); fab.disabled = false;
-    document.getElementById('fabTxt').textContent = '立つ';
-    document.getElementById('fabSub').textContent = '通話を終える';
-  } else {
-    fab.classList.remove('leave');
-    fab.disabled = !onSeat || focusing;
-    document.getElementById('fabTxt').textContent = '座る';
-    document.getElementById('fabSub').textContent =
-      focusing ? '集中中' : (onSeat ? 'この席に' : '席の上で');
+    go(3); setMode('3d'); Ui.renderPanel();
+    Bus.emit(EV.ENTERED, team);
   }
-}
 
-/* --- スマホ: 「今週」シートの開閉 --- */
-const panel = document.getElementById('panel');
-document.getElementById('panelBtn').onclick = ()=> panel.classList.toggle('open');
-document.getElementById('closeSheet').onclick = ()=> panel.classList.remove('open');
-
-function standUp(){
-  if (!state.seated){ toast('いま座っていません'); return; }
-  state.seated = null; state.inCall = false;
-  state.me.status = 'open'; document.getElementById('statusSel').value = 'open';
-  updateBar(); toast('席を立ちました。マイクを切断しました');
-}
-document.getElementById('leaveBtn').onclick = standUp;
-document.getElementById('statusSel').onchange = e=>{
-  state.me.status = e.target.value;
-  if (state.me.status === 'focus' && state.seated){ state.seated=null; state.inCall=false; toast('集中中にしたので席を立ちました'); }
-  updateBar(); renderPanel();
-};
-function updateBar(){
-  const mic = document.getElementById('micBtn'), txt = document.getElementById('micTxt');
-  mic.classList.toggle('live', state.inCall);
-  mic.classList.toggle('off', !state.inCall);
-  txt.textContent = state.inCall ? 'マイク接続中' : 'マイク未接続';
-  document.getElementById('barHint').textContent = state.inCall
-    ? '通話中だけマイクを掴んでいます'
-    : '通話していない間はマイクに接続していません';
-  updateFab();
-}
-
-function renderPanel(){
-  const b = document.getElementById('panelBody');
-  const mine = state.me.card.map((it,i)=>`
-    <label class="fitem ${it.s==='done'?'done':''}">
-      <input type="checkbox" ${it.s==='done'?'checked':''} data-i="${i}">
-      <span>${it.t}</span>
-      ${it.days?`<span class="flag">${it.days}日</span>`:''}
-    </label>`).join('');
-  const members = [...state.npcs].map((n,i)=>`
-    <div class="memb">
-      <span class="av" style="background:${n.color}"></span>
-      <span>${n.name}</span>
-      <span class="st ${n.status}">${STATUS_JA[n.status]}</span>
-    </div>`).join('');
-  b.innerHTML = `
-    <div class="card">
-      <div class="who"><span class="av" style="background:${state.me.color}"></span>${state.me.name}</div>
-      ${mine}
-    </div>
-    <div style="font-size:11.5px;color:var(--muted);margin:16px 0 6px;letter-spacing:.08em"
-         class="mono">いま居る人（${state.npcs.length}）</div>
-    ${members}
-    <div class="note" style="margin-top:16px">
-      個人の在席時間は記録していません。管理者にも見えません。
-    </div>`;
-  b.querySelectorAll('input[type=checkbox]').forEach(cb=>{
-    cb.onchange = ()=>{ const it = state.me.card[+cb.dataset.i];
-      it.s = cb.checked ? 'done' : 'open'; if (cb.checked) delete it.days;
-      renderPanel(); if (state.mode==='list') drawList(); };
-  });
-}
-
-/* --- タップ／クリックで移動。押したままドラッグすると指を追い続ける --- */
-let dragging = false;
-function pointTo(e){
-  if (state.mode === 'list') return;
-  const host = document.getElementById('stage');
-  const rect = host.getBoundingClientRect();
-  if (state.mode === '3d' && three){
-    const ndc = new THREE.Vector2(((e.clientX-rect.left)/rect.width)*2-1, -((e.clientY-rect.top)/rect.height)*2+1);
-    const ray = new THREE.Raycaster(); ray.setFromCamera(ndc, three.cam);
-    const hit = ray.intersectObject(three.floor)[0];
-    if (hit) moveTarget = { x: hit.point.x, y: hit.point.z };
-  } else {
-    const W = rect.width, H = rect.height;
-    const wide = !isSmall();
-    const padL = wide ? 240 : 12, padR = wide ? 312 : 12, padT = 16, padB = 86;
-    const availW = Math.max(120, W - padL - padR), availH = Math.max(120, H - padT - padB);
-    const ts = Math.min(availW/GRID.w, availH/GRID.h);
-    const ox = padL + (availW - GRID.w*ts)/2, oy = padT + (availH - GRID.h*ts)/2;
-    moveTarget = { x: (e.clientX-rect.left-ox)/ts, y: (e.clientY-rect.top-oy)/ts };
+  function setMode(m){
+    Store.set({ mode:m, panelOpen:false });
+    [...$('modes').children].forEach(b => b.setAttribute('aria-pressed', b.dataset.m===m));
+    const el3 = renderers['3d'].el(), el2 = renderers['2d'].el();
+    if (el3) el3.style.display = m==='3d' ? 'block' : 'none';
+    if (el2) el2.style.display = m==='2d' ? 'block' : 'none';
+    stage.style.display = m==='list' ? 'none' : 'block';
+    $('listView').style.display = m==='list' ? 'block' : 'none';
+    $('legend').style.display = (m==='list' || env.small()) ? 'none' : 'block';
+    $('panel').classList.remove('open');
+    if (m !== 'list') resize();
+    Bus.emit(EV.MODE, m);
   }
-}
-const stageEl = document.getElementById('stage');
-stageEl.addEventListener('pointerdown', e=>{
-  dragging = true;
-  try { stageEl.setPointerCapture(e.pointerId); } catch(_){}
-  pointTo(e);
-});
-stageEl.addEventListener('pointermove', e=>{ if (dragging) pointTo(e); });
-['pointerup','pointercancel'].forEach(ev=>
-  stageEl.addEventListener(ev, e=>{
-    dragging = false;
-    try { stageEl.releasePointerCapture(e.pointerId); } catch(_){}
-  }));
 
-/* --- 移動（論理側。衝突はグリッドで判定） --- */
-function step(dt){
-  const sp = 4.2 * dt;
-  let dx = 0, dy = 0;
-  if (keys['w']||keys['arrowup'])    dy -= 1;
-  if (keys['s']||keys['arrowdown'])  dy += 1;
-  if (keys['a']||keys['arrowleft'])  dx -= 1;
-  if (keys['d']||keys['arrowright']) dx += 1;
-  if (dx||dy) moveTarget = null;
-  if (!dx && !dy && moveTarget){
-    const vx = moveTarget.x - state.me.x, vy = moveTarget.y - state.me.y;
-    const d = Math.hypot(vx,vy);
-    if (d < .12) moveTarget = null; else { dx = vx/d; dy = vy/d; }
+  function resize(){
+    const w = stage.clientWidth, h = stage.clientHeight;
+    const el2 = renderers['2d'].el();
+    if (el2){ el2.style.width = w+'px'; el2.style.height = h+'px'; }
+    renderers['3d'].resize(w,h);
   }
-  if (dx||dy){
-    const len = Math.hypot(dx,dy) || 1;
-    const nx = state.me.x + dx/len*sp, ny = state.me.y + dy/len*sp;
-    if (!isBlocked(nx, state.me.y)) state.me.x = nx;     // 軸ごとに判定＝壁ずり
-    if (!isBlocked(state.me.x, ny)) state.me.y = ny;
-    state.me.dir = Math.atan2(dx, dy);
-    if (state.seated){ const s = seatAt(state.me.x,state.me.y);
-      if (!s || s.id !== state.seated){ state.seated=null; state.inCall=false;
-        state.me.status='open'; document.getElementById('statusSel').value='open'; updateBar(); } }
-  }
-  // NPC のゆるい徘徊
-  state.npcs.forEach(n=>{
-    if (!n.wander) return;
-    const d = Math.hypot(n.tx-n.x, n.ty-n.y);
-    if (d < .2){
-      if (Math.random() < .012){
-        let tx, ty, tries = 0;
-        do { tx = 6+Math.random()*8; ty = 8+Math.random()*5; tries++; } while (isBlocked(tx,ty) && tries<20);
-        n.tx = tx; n.ty = ty;
-      }
-    } else { n.x += (n.tx-n.x)/d * 1.5 * dt; n.y += (n.ty-n.y)/d * 1.5 * dt; }
-  });
-  computeNearby();
-  updateFab();
-}
 
-/* --- 3D の毎フレーム更新 --- */
-let labelCache = new Map();
-function render3D(){
-  const t = three; if (!t) return;
-  // 固定クォータービュー（回転・自由ズームなし）
-  const cx = state.me.x, cz = state.me.y;
-  // 縦画面では「引く」のではなく見下ろしを強める。引くと空ばかり映ってしまう
-  const portrait = t.cam.aspect < 0.95;
-  const camY = portrait ? 19.5 : 15.0;
-  const camZ = portrait ? 9.2 : 12.6;
-  const look = portrait ? -0.6 : -1.6;
-  t.cam.position.set(cx + 0.01, camY, cz + camZ);
-  t.cam.lookAt(cx, 0, cz + look);
-  t.meG.position.set(cx, 0, cz);
-  t.meG.rotation.y = state.me.dir;
-  state.npcs.forEach((n,i)=>{
-    t.npcG[i].position.set(n.x, 0, n.y);
-    const near = state.nearby.includes(i);
-    t.rings[i].visible = near;
-    t.rings[i].position.set(n.x, .03, n.y);
-    const sp = t.labels[i];
-    const showCard = near;
-    const key = n.name + '|' + n.status + '|' + showCard + '|' + document.documentElement.getAttribute('data-theme');
-    if (labelCache.get(sp) !== key){
-      const L = makeLabel(n.name, STATUS_JA[n.status], showCard ? n.card : null,
-        n.status==='open' ? '#5F8C6B' : (n.status==='meet' ? '#C8873C' : '#4F8299'));
-      sp.material.map = L.tex; sp.material.needsUpdate = true;
-      sp.scale.set(2.5, 2.5 / L.aspect, 1);
-      labelCache.set(sp, key);
-    }
-    sp.position.set(n.x, 1.55, n.y);
-  });
-  const meKey = state.me.name + '|' + state.me.status + '|' + document.documentElement.getAttribute('data-theme');
-  if (labelCache.get(t.meLabel) !== meKey){
-    const L = makeLabel(state.me.name + '（あなた）', STATUS_JA[state.me.status], null, '#C8873C');
-    t.meLabel.material.map = L.tex; t.meLabel.material.needsUpdate = true;
-    t.meLabel.scale.set(2.5, 2.5 / L.aspect, 1);
-    labelCache.set(t.meLabel, meKey);
-  }
-  t.meLabel.position.set(cx, 1.55, cz);
-  t.r.render(t.sc, t.cam);
-}
-
-/* --- 表示モード切替 --- */
-function setMode(m){
-  state.mode = m;
-  [...document.getElementById('modes').children].forEach(b=> b.setAttribute('aria-pressed', b.dataset.m===m));
-  const stage = document.getElementById('stage'), list = document.getElementById('listView');
-  const legend = document.getElementById('legend');
-  if (three) three.r.domElement.style.display = m==='3d' ? 'block' : 'none';
-  if (cv2) cv2.style.display = m==='2d' ? 'block' : 'none';
-  stage.style.display = m==='list' ? 'none' : 'block';
-  list.style.display  = m==='list' ? 'block' : 'none';
-  legend.style.display = (m==='list' || isSmall()) ? 'none' : 'block';
-  if (m==='list'){ drawList(); panel.classList.remove('open'); } else resize();
-  const hints = { '3d':'3D 表現', '2d':'2D 表現（同じ論理データ）', 'list':'描画なし（DOM のみ）' };
-  toast(hints[m] + 'に切り替えました');
-}
-document.getElementById('modes').onclick = e=>{ const b = e.target.closest('[data-m]'); if (b) setMode(b.dataset.m); };
-
-function resize(){
-  const host = document.getElementById('stage');
-  const w = host.clientWidth, h = host.clientHeight;
-  if (three){
-    three.r.setSize(w,h,false);
-    three.cam.aspect = w/h;
-    three.cam.fov = (w/h) < 0.95 ? 40 : 38;
-    three.cam.updateProjectionMatrix();
-  }
-  if (state.mode === '2d') draw2D();
-}
-addEventListener('resize', ()=> { if (state.screen===3) resize(); });
-addEventListener('orientationchange', ()=> setTimeout(()=>{ if (state.screen===3) resize(); }, 250));
-if (window.visualViewport) visualViewport.addEventListener('resize', ()=>{ if (state.screen===3) resize(); });
-
-/* --- 30fps 上限（[04 §4.6] の描画予算）。OFF にすると素の性能が測れる --- */
-let fpsCap = 30;
-const capBtn = document.getElementById('capBtn');
-capBtn.onclick = ()=>{
-  fpsCap = fpsCap ? 0 : 30;
-  capBtn.setAttribute('aria-pressed', !!fpsCap);
-  capBtn.textContent = fpsCap ? '30fps 上限 ON' : '30fps 上限 OFF';
-  toast(fpsCap ? '30fps に制限しました（設計どおりの状態）'
-               : '上限を外しました。frame の ms が端末の素の余力です');
-};
-
-let last = performance.now(), acc = 0, frames = 0, lastList = 0;
-let frameAcc = 0, renderMs = 0;
-function loop(now){
-  requestAnimationFrame(loop);
-  now = now || performance.now();
-  let dt = (now - last)/1000; last = now;
-  if (dt > .12) dt = .12;
-  if (document.hidden || state.screen !== 3) return;   // 非アクティブタブでは何もしない
-
-  // 上限がかかっている間は step も render も走らせない（描画だけ間引いても CPU は休まない）
-  frameAcc += dt;
-  if (fpsCap && frameAcc < (1/fpsCap - 0.002)) return;
-  const useDt = frameAcc; frameAcc = 0;
-
-  step(useDt);
-  const t0 = performance.now();
-  if (state.mode === '3d') render3D();
-  else if (state.mode === '2d') draw2D();
-  else if (now - lastList > 500){ drawList(); lastList = now; }
-  // 1フレームの描画にかかった時間。上限をかけていても値は変わらないので、余力が分かる
-  renderMs += (performance.now() - t0 - renderMs) * 0.15;
-
-  frames++; acc += useDt;
-  if (acc >= .5){
-    const fps = Math.round(frames/acc); frames = 0; acc = 0;
-    document.getElementById('hFps').textContent = state.mode==='list' ? '—' : fps;
-    document.getElementById('hMs').textContent  = renderMs.toFixed(1) + ' ms';
-    if (three && state.mode === '3d'){
-      document.getElementById('hCalls').textContent = three.r.info.render.calls;
-      document.getElementById('hTris').textContent  = three.r.info.render.triangles.toLocaleString();
+  /* --- 入力の配線 --- */
+  const doAction = () => { const a = Systems.interaction.resolve(); if (a.enabled) a.run(); };
+  const input = InputAdapter(stage, e=>{
+    const st = Store.get(); if (st.mode === 'list') return;
+    const rect = stage.getBoundingClientRect();
+    if (st.mode === '3d'){
+      const p = renderers['3d'].pick(((e.clientX-rect.left)/rect.width)*2-1, -((e.clientY-rect.top)/rect.height)*2+1);
+      if (p) Systems.movement.setTarget(p);
     } else {
-      document.getElementById('hCalls').textContent = '0';
-      document.getElementById('hTris').textContent  = '0';
+      Systems.movement.setTarget(renderers['2d'].pickFromClient(e.clientX-rect.left, e.clientY-rect.top));
+    }
+  }, doAction);
+
+  $('fab').onclick = doAction;
+  $('leaveBtn').onclick = doAction;
+  $('modes').onclick = e => { const b = e.target.closest('[data-m]'); if (b) setMode(b.dataset.m); };
+  $('panelBtn').onclick = ()=> $('panel').classList.toggle('open');
+  $('closeSheet').onclick = ()=> $('panel').classList.remove('open');
+  $('ovClose').onclick = Ui.closeOverlay;
+  $('overlay').onclick = e => { if (e.target === $('overlay')) Ui.closeOverlay(); };
+  $('statusSel').onchange = e => {
+    Store.set({ status: e.target.value });
+    if (e.target.value === 'focus' && Store.get().conversation) Systems.conversation.stand();
+    Bus.emit(EV.STATUS, e.target.value);
+  };
+  $('capBtn').onclick = ()=>{
+    const cap = Store.get().fpsCap ? 0 : 30;
+    Store.set({ fpsCap: cap });
+    $('capBtn').setAttribute('aria-pressed', !!cap);
+    $('capBtn').textContent = cap ? '30fps 上限 ON' : '30fps 上限 OFF';
+    Ui.toast(cap ? '30fps に制限しました（設計どおりの状態）' : '上限を外しました。素の余力が測れます');
+  };
+  $('themeBtn').onclick = ()=>{
+    const cur = document.documentElement.getAttribute('data-theme');
+    const now = cur || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+    onTheme();
+  };
+  function onTheme(){ renderers['3d'].theme(); preview && preview.rebuild(); }
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', onTheme);
+
+  addEventListener('resize', ()=>{ if (Store.get().screen===3) resize(); });
+  addEventListener('orientationchange', ()=> setTimeout(()=>{ if (Store.get().screen===3) resize(); }, 250));
+  if (window.visualViewport) visualViewport.addEventListener('resize', ()=>{ if (Store.get().screen===3) resize(); });
+
+  /* --- 出来事 → UI（ここが唯一の「出来事を人に見せる」場所） --- */
+  Bus.on(EV.NOTICE, m => Ui.toast(m));
+  Bus.on(EV.ENTERED, ()=> Ui.toast(env.touch
+    ? 'タップした場所へ歩きます。指を置いたまま動かすと追いかけます'
+    : '近づくとリングが出ます。話すには席に座るかノックしてください'));
+  Bus.on(EV.SAT, ({ mates }) => Ui.toast(mates.length
+    ? `${mates.map(m=>m.split(' ')[0]).join('・')}さんと通話が始まりました`
+    : '席につきました（まだ誰もいません）'));
+  Bus.on(EV.STOOD, ()=> Ui.toast('通話を終えました。マイクを切断しました'));
+  Bus.on(EV.KNOCKED, npc => Ui.toast(`${npc.name.split(' ')[0]}さんにノックしました…`));
+  Bus.on(EV.ANSWERED, ({ npc, accepted }) => Ui.toast(accepted
+    ? `${npc.name.split(' ')[0]}さんが「今いいよ」。通話が始まりました`
+    : `${npc.name.split(' ')[0]}さんからの返事はありませんでした（それも正常です）`));
+
+  /* --- 状態 → UI（購読は1本だけ） --- */
+  Store.subscribe(()=>{ Ui.renderCall(); Ui.renderAction(); });
+
+  /* --- ループ: 固定タイムステップ + 30fps 上限 --- */
+  let last = performance.now(), accFps = 0, frames = 0, frameAcc = 0, renderMs = 0;
+  function loop(now){
+    requestAnimationFrame(loop);
+    now = now || performance.now();
+    let dt = (now - last)/1000; last = now;
+    if (dt > .12) dt = .12;
+    if (document.hidden || Store.get().screen !== 3) return;
+
+    const cap = Store.get().fpsCap;
+    frameAcc += dt;
+    if (cap && frameAcc < (1/cap - .002)) return;
+    const step = frameAcc; frameAcc = 0;
+
+    Systems.movement.step(step, input.axis());
+    Systems.presence.step(step);
+    Systems.conversation.tick(now);
+    Ui.renderAction();
+
+    const t0 = performance.now();
+    renderers[Store.get().mode].render(now);
+    renderMs += (performance.now() - t0 - renderMs) * .15;
+
+    frames++; accFps += step;
+    if (accFps >= .5){
+      Ui.renderStats(Math.round(frames/accFps), renderMs, renderers[Store.get().mode].stats());
+      frames = 0; accFps = 0;
     }
   }
-}
 
-/* --- 画面遷移 --- */
-function go(n){
-  state.screen = n;
-  [1,2,3].forEach(i=> document.getElementById('s'+i).classList.toggle('on', i===n));
-  [...document.getElementById('steps').querySelectorAll('.step')].forEach(el=>{
-    const s = +el.dataset.s;
-    el.classList.toggle('on', s===n); el.classList.toggle('done', s<n);
-  });
-  if (n===3) requestAnimationFrame(resize);
-  scrollTo(0,0);
-}
-document.getElementById('toTeams').onclick = ()=>{ renderTeams(); go(2); };
-
-let toastT;
-function toast(msg){
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.classList.add('on');
-  clearTimeout(toastT); toastT = setTimeout(()=> el.classList.remove('on'), 2400);
-}
-
-initPreview();
-updateBar();
-updateFab();
+  preview = AvatarPreview($('mkCanvas'));
+  Ui.renderCall(); Ui.renderAction();
+})();
 </script>

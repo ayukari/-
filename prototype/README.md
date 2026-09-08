@@ -22,7 +22,7 @@ open prototype/index.html      # macOS
 | | PC | スマホ・タブレット |
 | --- | --- | --- |
 | 移動 | `WASD` / 矢印キー、クリックした場所へ歩く | **タップした場所へ歩く。指を置いたまま動かすと追いかける** |
-| 着席（通話開始） | 席の上で `E` | 席の上で右下の**丸ボタン「座る」** |
+| 使う（着席・ノック・貼り紙を読む） | `E` | 右下の**丸ボタン**（表示が状況で変わる） |
 | 離席 | 下部バーの「席を立つ」 | 丸ボタン「立つ」 |
 | 今週のカード / メンバー | 右パネル（常時表示） | 下部バーの**「今週」で下から出るシート** |
 | 表示切替 | 左上の 3D / 2D / リスト | 同じ（左上、コンパクト表示） |
@@ -68,6 +68,44 @@ open prototype/index.html      # macOS
 
 実測が必要なもの（低スペック実機での fps、E2EE の負荷、TURN の疎通）は
 [06. ロードマップ](../docs/design/06-roadmap.md) の Phase 0 で扱います。
+
+## コードの構造
+
+[08. 拡張のしかた](../docs/design/08-extensibility.md) の配線をそのまま実装している。
+1ファイルだがセクションで層が分かれており、**依存は常に外→内**。
+
+```
+core      World（グリッド・当たり判定・近接） / Registry（できることの登録簿）
+systems   movement / conversation / interaction / presence
+ports     SpaceRenderer（契約）
+adapters  ThreeRenderer / FlatRenderer(2D) / ListRenderer / InputAdapter / Ui
+boot      合成ルート。全部を知っているのはここだけ
+```
+
+状態の置き場所は3つに分けてある。
+
+| 置き場所 | 何を | 購読 |
+| --- | --- | --- |
+| `World` | 座標（毎フレーム変わる） | しない。レンダラが直接読む |
+| `Store` | ステータス・会話・表示モード | UI が購読 |
+| `Bus` | 座った・ノックした（一回きりの出来事） | UI が受けてトーストを出す |
+
+### 拡張点
+
+オブジェクト種別を `Registry.define()` に1件足すと、**3D・2D・リストすべてに出る**。
+
+```js
+Registry.define('note', {
+  action({obj}) { return { label:'読む', sub:'貼り紙', run: () => Ui.overlay(...) } },
+  build3d(obj, mat, THREE) { /* 3D */ },
+  draw2d(obj, ctx, transform) { /* 2D */ },
+  listRow(obj) { /* リスト */ },
+})
+```
+
+いま入っているのは `seat`（席）/ `note`（貼り紙）/ `board`（チームの今週ボード）の3種類。
+相互作用の動詞は **「使う」1つだけ**（PC は `E`、スマホは丸ボタン）。
+何が起きるかは `Systems.interaction.resolve()` が決め、UI はその戻り値しか見ない。
 
 ## 技術
 
