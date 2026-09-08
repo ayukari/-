@@ -83,12 +83,22 @@ enum Role { MEMBER ADMIN }
 
 ### 3.2 空間
 
+**論理レイヤーと表現レイヤーを分離する**（[02 §6.1](./02-problem-solving.md)）。
+座標・当たり判定・エリア判定はすべて 2D グリッドで持ち、3D は表現データとして別に置く。
+これにより 3D → 2D ビュー → リストモードへの縮退が、論理を一切変えずに成立する。
+
 ```prisma
 model Space {
   id        String @id @default(cuid())
   orgId     String
   name      String
-  tilemap   Json                    // Tiled (.tmj) 形式
+
+  // 論理レイヤー（唯一の正）— 当たり判定・エリア・席。表現方式に依存しない
+  grid      Json                    // { width, height, blocked: [[x,y],...] }
+
+  // 表現レイヤー（描画のためだけのデータ）
+  scene3d   Json?                   // 3D: glTF アセットID と配置（位置・回転・種別）
+  tilemap2d Json?                   // 2D ビュー: Tiled (.tmj) 形式
 }
 
 model Area {
