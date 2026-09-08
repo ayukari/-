@@ -144,7 +144,12 @@ button{font:inherit;color:inherit;cursor:pointer}
 .hud .k{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);
   font-family:"JetBrains Mono",monospace;line-height:1.9}
 .hud .k b{color:var(--ink);font-weight:500}
-.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:9px}
+.capBtn{
+  width:100%;margin-top:9px;border:1px solid var(--line);background:var(--surface-2);
+  border-radius:7px;padding:6px 0;font-size:11px;font-family:"JetBrains Mono",monospace;
+}
+.capBtn[aria-pressed="true"]{background:var(--cool-soft);border-color:transparent;color:var(--cool);font-weight:500}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:6px}
 .modes button{border:1px solid var(--line);background:var(--surface-2);border-radius:7px;padding:6px 0;font-size:11.5px}
 .modes button[aria-pressed="true"]{background:var(--accent);border-color:transparent;color:#fff;font-weight:700}
 .hudNote{font-size:10.5px;color:var(--muted);line-height:1.55;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
@@ -249,7 +254,8 @@ select.ctl{appearance:none;padding-right:26px;background-image:linear-gradient(4
   .hud .k{font-size:9.5px;line-height:1.5;gap:10px}
   .hud .k.hideSm{display:none}
   .hudNote{display:none}
-  .modes{margin-top:5px;gap:3px;grid-template-columns:repeat(3,auto)}
+  .capBtn{margin-top:6px;padding:6px 0;font-size:10px}
+  .modes{margin-top:4px;gap:3px;grid-template-columns:repeat(3,auto)}
   .modes button{padding:6px 10px;font-size:11px;min-height:32px}
 
   .legend{display:none}
@@ -357,13 +363,15 @@ select.ctl{appearance:none;padding-right:26px;background-image:linear-gradient(4
     <div class="hud">
       <div class="k"><span>fps</span><b id="hFps">—</b></div>
       <div class="k"><span>draw calls</span><b id="hCalls">—</b></div>
+      <div class="k"><span>frame (cpu)</span><b id="hMs">—</b></div>
       <div class="k hideSm"><span>triangles</span><b id="hTris">—</b></div>
+      <button class="capBtn" id="capBtn" aria-pressed="true">30fps 上限 ON</button>
       <div class="modes" id="modes">
         <button data-m="3d" aria-pressed="true">3D</button>
         <button data-m="2d" aria-pressed="false">2D</button>
         <button data-m="list" aria-pressed="false">リスト</button>
       </div>
-      <p class="hudNote">位置は 2D グリッドで持っているので、どの表示に切り替えても同じ場所に立っています。</p>
+      <p class="hudNote">位置は 2D グリッドで持っているので、どの表示に切り替えても同じ場所に立っています。frame は描画1回の CPU 側の所要時間です（GPU は非同期なので下振れします）。上限を OFF にしたときの fps のほうが、素の余力をよく表します。</p>
     </div>
 
     <div class="legend" id="legend">
@@ -1100,7 +1108,19 @@ addEventListener('resize', ()=> { if (state.screen===3) resize(); });
 addEventListener('orientationchange', ()=> setTimeout(()=>{ if (state.screen===3) resize(); }, 250));
 if (window.visualViewport) visualViewport.addEventListener('resize', ()=>{ if (state.screen===3) resize(); });
 
-let last = performance.now(), acc = 0, frames = 0, fps = 0, lastList = 0;
+/* --- 30fps 上限（[04 §4.6] の描画予算）。OFF にすると素の性能が測れる --- */
+let fpsCap = 30;
+const capBtn = document.getElementById('capBtn');
+capBtn.onclick = ()=>{
+  fpsCap = fpsCap ? 0 : 30;
+  capBtn.setAttribute('aria-pressed', !!fpsCap);
+  capBtn.textContent = fpsCap ? '30fps 上限 ON' : '30fps 上限 OFF';
+  toast(fpsCap ? '30fps に制限しました（設計どおりの状態）'
+               : '上限を外しました。frame の ms が端末の素の余力です');
+};
+
+let last = performance.now(), acc = 0, frames = 0, lastList = 0;
+let frameAcc = 0, renderMs = 0;
 function loop(now){
   requestAnimationFrame(loop);
   now = now || performance.now();
@@ -1108,15 +1128,24 @@ function loop(now){
   if (dt > .12) dt = .12;
   if (document.hidden || state.screen !== 3) return;   // 非アクティブタブでは何もしない
 
-  step(dt);
+  // 上限がかかっている間は step も render も走らせない（描画だけ間引いても CPU は休まない）
+  frameAcc += dt;
+  if (fpsCap && frameAcc < (1/fpsCap - 0.002)) return;
+  const useDt = frameAcc; frameAcc = 0;
+
+  step(useDt);
+  const t0 = performance.now();
   if (state.mode === '3d') render3D();
   else if (state.mode === '2d') draw2D();
   else if (now - lastList > 500){ drawList(); lastList = now; }
+  // 1フレームの描画にかかった時間。上限をかけていても値は変わらないので、余力が分かる
+  renderMs += (performance.now() - t0 - renderMs) * 0.15;
 
-  frames++; acc += dt;
+  frames++; acc += useDt;
   if (acc >= .5){
-    fps = Math.round(frames/acc); frames = 0; acc = 0;
+    const fps = Math.round(frames/acc); frames = 0; acc = 0;
     document.getElementById('hFps').textContent = state.mode==='list' ? '—' : fps;
+    document.getElementById('hMs').textContent  = renderMs.toFixed(1) + ' ms';
     if (three && state.mode === '3d'){
       document.getElementById('hCalls').textContent = three.r.info.render.calls;
       document.getElementById('hTris').textContent  = three.r.info.render.triangles.toLocaleString();
