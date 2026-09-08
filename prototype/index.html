@@ -38,6 +38,7 @@
 }
 
 *{box-sizing:border-box}
+html{overscroll-behavior:none}
 body{
   margin:0; background:var(--ground); color:var(--ink);
   font-family:"Zen Kaku Gothic New",-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
@@ -125,8 +126,8 @@ button{font:inherit;color:inherit;cursor:pointer}
   border:1px solid var(--line)}
 
 /* ---------- step 3: room ---------- */
-#room{position:relative;height:calc(100vh - 52px);min-height:520px;overflow:hidden;background:var(--surface-2)}
-#stage{position:absolute;inset:0}
+#room{position:relative;height:calc(100vh - 52px);height:calc(100dvh - 52px);min-height:420px;overflow:hidden;background:var(--surface-2)}
+#stage{position:absolute;inset:0;touch-action:none;-webkit-user-select:none;user-select:none}
 #stage canvas{display:block;width:100%;height:100%}
 #listView{position:absolute;inset:0;overflow:auto;padding:26px 22px 120px;display:none}
 .listGrid{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:11px}
@@ -149,10 +150,12 @@ button{font:inherit;color:inherit;cursor:pointer}
 .hudNote{font-size:10.5px;color:var(--muted);line-height:1.55;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
 
 .panel{
-  position:absolute;top:14px;right:14px;bottom:82px;width:290px;z-index:20;
+  position:absolute;top:14px;right:14px;bottom:82px;width:290px;z-index:22;
   background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
   display:flex;flex-direction:column;overflow:hidden;
 }
+.panel .grip{display:none}
+.panel .closeSheet{display:none}
 .panel header{padding:13px 15px 10px;border-bottom:1px solid var(--line)}
 .panel header h3{font-size:13.5px}
 .panel header p{margin:3px 0 0;font-size:11.5px;color:var(--muted)}
@@ -188,6 +191,18 @@ select.ctl{appearance:none;padding-right:26px;background-image:linear-gradient(4
   background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;background-size:5px 5px;background-repeat:no-repeat}
 .barhint{margin-left:auto;font-size:11.5px;color:var(--muted);font-family:"JetBrains Mono",monospace}
 
+.fab{
+  position:absolute;right:16px;z-index:21;width:70px;height:70px;border-radius:50%;
+  bottom:calc(84px + env(safe-area-inset-bottom));
+  background:var(--accent);color:#fff;border:none;box-shadow:0 6px 20px -6px rgba(0,0,0,.45);
+  font-family:"Zen Maru Gothic",sans-serif;font-weight:700;font-size:14px;line-height:1.25;
+  display:none;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+}
+.fab small{font-size:10px;font-weight:500;opacity:.85}
+.fab[disabled]{background:var(--surface);color:var(--muted);border:1px solid var(--line);box-shadow:var(--shadow)}
+.fab.leave{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+@media (max-width:900px),(hover:none){ .fab{display:flex} }
+
 .toast{
   position:absolute;left:50%;bottom:88px;transform:translateX(-50%);z-index:30;
   background:var(--ink);color:var(--ground);padding:9px 17px;border-radius:999px;font-size:13px;
@@ -199,10 +214,75 @@ select.ctl{appearance:none;padding-right:26px;background-image:linear-gradient(4
   background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 11px;max-width:212px;line-height:1.6}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.panelBtn{display:none}
+
+/* ===== タブレット・スマホ ===== */
 @media (max-width:900px){
-  .mk{grid-template-columns:1fr}
-  .panel{display:none}
-  .hud{width:180px}
+  .wrap{padding:26px 16px 56px}
+  .mk{grid-template-columns:1fr;gap:24px}
+  .mkStage{max-width:340px;margin:0 auto}
+  .teams{grid-template-columns:1fr;gap:11px}
+
+  /* サイドパネル → 下から出るシート */
+  .panel{
+    top:auto; left:10px; right:10px; width:auto;
+    bottom:calc(72px + env(safe-area-inset-bottom));
+    max-height:min(56dvh,420px);
+    transform:translateY(calc(100% + 110px));
+    transition:transform .26s cubic-bezier(.32,.72,0,1);
+    border-radius:18px;
+  }
+  .panel.open{transform:none}
+  .panel .grip{
+    display:block;width:38px;height:4px;border-radius:99px;background:var(--line);
+    margin:9px auto 0;flex:none;
+  }
+  .panel header{display:flex;align-items:center;gap:10px;padding:9px 15px 10px}
+  .panel header > div{flex:1;min-width:0}
+  .panel .closeSheet{
+    display:grid;place-items:center;width:32px;height:32px;flex:none;
+    border:1px solid var(--line);border-radius:9px;background:var(--surface-2);font-size:15px;
+  }
+
+  .hud{width:auto;left:10px;right:auto;top:10px;padding:6px 7px;border-radius:10px}
+  .hud .k{font-size:9.5px;line-height:1.5;gap:10px}
+  .hud .k.hideSm{display:none}
+  .hudNote{display:none}
+  .modes{margin-top:5px;gap:3px;grid-template-columns:repeat(3,auto)}
+  .modes button{padding:6px 10px;font-size:11px;min-height:32px}
+
+  .legend{display:none}
+
+  .bar{
+    left:8px;right:8px;height:auto;min-height:58px;padding:7px 9px;gap:7px;
+    bottom:calc(8px + env(safe-area-inset-bottom));
+  }
+  .ctl{padding:9px 11px;font-size:12.5px;min-height:40px}
+  .barhint{display:none}
+  #leaveBtn{display:none}          /* FAB に集約 */
+  .panelBtn{display:flex}
+
+  .toast{bottom:calc(168px + env(safe-area-inset-bottom));font-size:12.5px;padding:9px 15px;
+    max-width:calc(100vw - 44px);white-space:normal;text-align:center;line-height:1.55}
+  #listView{padding:18px 12px calc(96px + env(safe-area-inset-bottom))}
+  .listRow{grid-template-columns:28px minmax(0,1fr);gap:11px}
+  .listRow > div:last-child{grid-column:2;flex-direction:row!important;align-items:center!important}
+}
+
+/* ===== スマホ（縦） ===== */
+@media (max-width:560px){
+  .rail{padding:0 12px;height:48px}
+  .brand{margin-right:12px;font-size:15px}
+  .step b{display:none}
+  .step{padding:4px 6px;gap:0}
+  .step-sep{width:8px}
+  #room{height:calc(100vh - 48px);height:calc(100dvh - 48px)}
+  .wrap{padding:22px 14px 48px}
+  h1{font-size:24px!important}
+  .fab{width:62px;height:62px;font-size:13px;right:12px}
+  .ctl{padding:9px 10px;font-size:12px}
+  select.ctl{padding-right:24px}
 }
 </style>
 
@@ -277,7 +357,7 @@ select.ctl{appearance:none;padding-right:26px;background-image:linear-gradient(4
     <div class="hud">
       <div class="k"><span>fps</span><b id="hFps">—</b></div>
       <div class="k"><span>draw calls</span><b id="hCalls">—</b></div>
-      <div class="k"><span>triangles</span><b id="hTris">—</b></div>
+      <div class="k hideSm"><span>triangles</span><b id="hTris">—</b></div>
       <div class="modes" id="modes">
         <button data-m="3d" aria-pressed="true">3D</button>
         <button data-m="2d" aria-pressed="false">2D</button>
@@ -291,13 +371,19 @@ select.ctl{appearance:none;padding-right:26px;background-image:linear-gradient(4
       席に立って <b style="color:var(--ink)">E</b> で着席 → 通話が始まります。
     </div>
 
-    <aside class="panel">
+    <aside class="panel" id="panel">
+      <span class="grip"></span>
       <header>
-        <h3 id="panelTitle">今週のわたし</h3>
-        <p id="panelSub">月曜の朝に3〜5件だけ書く</p>
+        <div>
+          <h3 id="panelTitle">今週のわたし</h3>
+          <p id="panelSub">月曜の朝に3〜5件だけ書く</p>
+        </div>
+        <button class="closeSheet" id="closeSheet" aria-label="閉じる">✕</button>
       </header>
       <div class="panelBody" id="panelBody"></div>
     </aside>
+
+    <button class="fab" id="fab"><span id="fabTxt">座る</span><small id="fabSub">席の上で</small></button>
 
     <div class="bar">
       <button class="ctl off" id="micBtn" disabled><span class="led"></span><span id="micTxt">マイク未接続</span></button>
@@ -308,6 +394,7 @@ select.ctl{appearance:none;padding-right:26px;background-image:linear-gradient(4
         <option value="away">離席</option>
       </select>
       <button class="ctl" id="leaveBtn">席を立つ</button>
+      <button class="ctl panelBtn" id="panelBtn">今週</button>
       <span class="barhint" id="barHint">通話していない間はマイクに接続していません</span>
     </div>
 
@@ -324,6 +411,8 @@ select.ctl{appearance:none;padding-right:26px;background-image:linear-gradient(4
 
 const COLORS = ['#C8873C','#4F8299','#7A6FA8','#5F8C6B','#B25F6A','#8A7B5E'];
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const TOUCH = matchMedia('(hover: none)').matches || navigator.maxTouchPoints > 0;
+const isSmall = () => innerWidth <= 900;
 
 /* ---------- テーマ ---------- */
 const themeBtn = document.getElementById('themeBtn');
@@ -533,7 +622,8 @@ let three = null;
 function initThree(){
   const host = document.getElementById('stage');
   const r = new THREE.WebGLRenderer({ antialias:true, powerPreference:'low-power' });
-  r.setPixelRatio(Math.min(devicePixelRatio, 1.5));   // 解像度スケーリングの土台
+  // 解像度スケーリングの土台。タッチ端末（＝多くはモバイルGPU）ではさらに抑える
+  r.setPixelRatio(Math.min(devicePixelRatio, TOUCH ? 1.25 : 1.5));
   host.appendChild(r.domElement);
 
   const sc = new THREE.Scene();
@@ -550,6 +640,11 @@ function initThree(){
     prop:  new THREE.MeshLambertMaterial({ color:0xb9a98f }),
     seat:  new THREE.MeshLambertMaterial({ color:0xa8b4bd }),
   };
+
+  // 部屋の外側の地面。縦画面では視界が部屋の外まで届くため、背景色の抜けを防ぐ
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(90, 90),
+      new THREE.MeshLambertMaterial({ color:0xc9d1d8 }));
+  ground.rotation.x = -Math.PI/2; ground.position.set(GRID.w/2, -0.04, GRID.h/2); sc.add(ground);
 
   // 床（エリアごとに色を変える）
   const floorG = new THREE.PlaneGeometry(GRID.w, GRID.h);
@@ -618,6 +713,7 @@ function initThree(){
       M.prop.color.set(dark ? 0x6b5f4c : 0xb9a98f);
       M.seat.color.set(dark ? 0x55606a : 0xa8b4bd);
       part.material.color.set(dark ? 0x515c66 : 0xb6bfc8);
+      ground.material.color.set(dark ? 0x171d24 : 0xc9d1d8);
       sun.intensity = dark ? .55 : .80;
     }
   };
@@ -675,7 +771,7 @@ function draw2D(){
   const W = host.clientWidth, H = host.clientHeight, dpr = Math.min(devicePixelRatio,2);
   cv2.width = W*dpr; cv2.height = H*dpr; cv2.style.width = W+'px'; cv2.style.height = H+'px';
   const g = cv2.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0);
-  const wide = innerWidth > 900;
+  const wide = !isSmall();
   const padL = wide ? 240 : 12, padR = wide ? 312 : 12, padT = 16, padB = 86;
   const availW = Math.max(120, W - padL - padR), availH = Math.max(120, H - padT - padB);
   const ts = Math.min(availW/GRID.w, availH/GRID.h);
@@ -758,12 +854,15 @@ function enterRoom(){
   if (!three) { initThree(); init2D(); resize(); loop(); }
   setMode('3d');
   renderPanel();
-  toast(`${state.team.name} の部屋に入りました`);
+  toast(TOUCH
+    ? 'タップした場所へ歩きます。指を置いたまま動かすと追いかけます'
+    : `${state.team.name} の部屋に入りました`);
 }
 
 function trySit(){
+  if (state.me.status === 'focus'){ toast('集中中は席につけません。ステータスを変えてください'); return; }
   const s = seatAt(state.me.x, state.me.y);
-  if (!s){ toast('席の上で E を押すと座れます'); return; }
+  if (!s){ toast(TOUCH ? '席（四角い座布団）の上まで歩いてから押してください' : '席の上で E を押すと座れます'); return; }
   if (state.seated === s.id) return;
   state.seated = s.id;
   const mates = state.npcs.filter(n => n.seat && SEATS.find(x=>x.id===n.seat)?.table === s.table);
@@ -773,12 +872,37 @@ function trySit(){
   updateBar();
   toast(mates.length ? `${mates.map(m=>m.name.split(' ')[0]).join('・')}さんと通話が始まりました` : '席につきました（まだ誰もいません）');
 }
-document.getElementById('leaveBtn').onclick = ()=>{
+/* --- スマホ: 着席/離席の丸ボタン --- */
+const fab = document.getElementById('fab');
+fab.onclick = ()=>{ state.seated ? standUp() : trySit(); };
+function updateFab(){
+  const onSeat = !!seatAt(state.me.x, state.me.y);
+  const focusing = state.me.status === 'focus';
+  if (state.seated){
+    fab.classList.add('leave'); fab.disabled = false;
+    document.getElementById('fabTxt').textContent = '立つ';
+    document.getElementById('fabSub').textContent = '通話を終える';
+  } else {
+    fab.classList.remove('leave');
+    fab.disabled = !onSeat || focusing;
+    document.getElementById('fabTxt').textContent = '座る';
+    document.getElementById('fabSub').textContent =
+      focusing ? '集中中' : (onSeat ? 'この席に' : '席の上で');
+  }
+}
+
+/* --- スマホ: 「今週」シートの開閉 --- */
+const panel = document.getElementById('panel');
+document.getElementById('panelBtn').onclick = ()=> panel.classList.toggle('open');
+document.getElementById('closeSheet').onclick = ()=> panel.classList.remove('open');
+
+function standUp(){
   if (!state.seated){ toast('いま座っていません'); return; }
   state.seated = null; state.inCall = false;
   state.me.status = 'open'; document.getElementById('statusSel').value = 'open';
   updateBar(); toast('席を立ちました。マイクを切断しました');
-};
+}
+document.getElementById('leaveBtn').onclick = standUp;
 document.getElementById('statusSel').onchange = e=>{
   state.me.status = e.target.value;
   if (state.me.status === 'focus' && state.seated){ state.seated=null; state.inCall=false; toast('集中中にしたので席を立ちました'); }
@@ -792,6 +916,7 @@ function updateBar(){
   document.getElementById('barHint').textContent = state.inCall
     ? '通話中だけマイクを掴んでいます'
     : '通話していない間はマイクに接続していません';
+  updateFab();
 }
 
 function renderPanel(){
@@ -826,8 +951,9 @@ function renderPanel(){
   });
 }
 
-/* --- クリック移動（3D: 床へのレイキャスト / 2D: 逆変換） --- */
-document.getElementById('stage').addEventListener('pointerdown', e=>{
+/* --- タップ／クリックで移動。押したままドラッグすると指を追い続ける --- */
+let dragging = false;
+function pointTo(e){
   if (state.mode === 'list') return;
   const host = document.getElementById('stage');
   const rect = host.getBoundingClientRect();
@@ -838,14 +964,26 @@ document.getElementById('stage').addEventListener('pointerdown', e=>{
     if (hit) moveTarget = { x: hit.point.x, y: hit.point.z };
   } else {
     const W = rect.width, H = rect.height;
-    const wide = innerWidth > 900;
+    const wide = !isSmall();
     const padL = wide ? 240 : 12, padR = wide ? 312 : 12, padT = 16, padB = 86;
     const availW = Math.max(120, W - padL - padR), availH = Math.max(120, H - padT - padB);
     const ts = Math.min(availW/GRID.w, availH/GRID.h);
     const ox = padL + (availW - GRID.w*ts)/2, oy = padT + (availH - GRID.h*ts)/2;
     moveTarget = { x: (e.clientX-rect.left-ox)/ts, y: (e.clientY-rect.top-oy)/ts };
   }
+}
+const stageEl = document.getElementById('stage');
+stageEl.addEventListener('pointerdown', e=>{
+  dragging = true;
+  try { stageEl.setPointerCapture(e.pointerId); } catch(_){}
+  pointTo(e);
 });
+stageEl.addEventListener('pointermove', e=>{ if (dragging) pointTo(e); });
+['pointerup','pointercancel'].forEach(ev=>
+  stageEl.addEventListener(ev, e=>{
+    dragging = false;
+    try { stageEl.releasePointerCapture(e.pointerId); } catch(_){}
+  }));
 
 /* --- 移動（論理側。衝突はグリッドで判定） --- */
 function step(dt){
@@ -884,6 +1022,7 @@ function step(dt){
     } else { n.x += (n.tx-n.x)/d * 1.5 * dt; n.y += (n.ty-n.y)/d * 1.5 * dt; }
   });
   computeNearby();
+  updateFab();
 }
 
 /* --- 3D の毎フレーム更新 --- */
@@ -892,8 +1031,13 @@ function render3D(){
   const t = three; if (!t) return;
   // 固定クォータービュー（回転・自由ズームなし）
   const cx = state.me.x, cz = state.me.y;
-  t.cam.position.set(cx + 0.01, 15.0, cz + 12.6);
-  t.cam.lookAt(cx, 0, cz - 1.6);
+  // 縦画面では「引く」のではなく見下ろしを強める。引くと空ばかり映ってしまう
+  const portrait = t.cam.aspect < 0.95;
+  const camY = portrait ? 19.5 : 15.0;
+  const camZ = portrait ? 9.2 : 12.6;
+  const look = portrait ? -0.6 : -1.6;
+  t.cam.position.set(cx + 0.01, camY, cz + camZ);
+  t.cam.lookAt(cx, 0, cz + look);
   t.meG.position.set(cx, 0, cz);
   t.meG.rotation.y = state.me.dir;
   state.npcs.forEach((n,i)=>{
@@ -934,8 +1078,8 @@ function setMode(m){
   if (cv2) cv2.style.display = m==='2d' ? 'block' : 'none';
   stage.style.display = m==='list' ? 'none' : 'block';
   list.style.display  = m==='list' ? 'block' : 'none';
-  legend.style.display = m==='list' ? 'none' : 'block';
-  if (m==='list') drawList(); else resize();
+  legend.style.display = (m==='list' || isSmall()) ? 'none' : 'block';
+  if (m==='list'){ drawList(); panel.classList.remove('open'); } else resize();
   const hints = { '3d':'3D 表現', '2d':'2D 表現（同じ論理データ）', 'list':'描画なし（DOM のみ）' };
   toast(hints[m] + 'に切り替えました');
 }
@@ -944,10 +1088,17 @@ document.getElementById('modes').onclick = e=>{ const b = e.target.closest('[dat
 function resize(){
   const host = document.getElementById('stage');
   const w = host.clientWidth, h = host.clientHeight;
-  if (three){ three.r.setSize(w,h,false); three.cam.aspect = w/h; three.cam.updateProjectionMatrix(); }
+  if (three){
+    three.r.setSize(w,h,false);
+    three.cam.aspect = w/h;
+    three.cam.fov = (w/h) < 0.95 ? 40 : 38;
+    three.cam.updateProjectionMatrix();
+  }
   if (state.mode === '2d') draw2D();
 }
 addEventListener('resize', ()=> { if (state.screen===3) resize(); });
+addEventListener('orientationchange', ()=> setTimeout(()=>{ if (state.screen===3) resize(); }, 250));
+if (window.visualViewport) visualViewport.addEventListener('resize', ()=>{ if (state.screen===3) resize(); });
 
 let last = performance.now(), acc = 0, frames = 0, fps = 0, lastList = 0;
 function loop(now){
@@ -998,4 +1149,5 @@ function toast(msg){
 
 initPreview();
 updateBar();
+updateFab();
 </script>
