@@ -255,7 +255,7 @@ enum AuditAction {
   SPACE_MAP_UPDATED
   ORG_SETTINGS_UPDATED
   PRIVATE_AREA_CREATED
-  PRIVATE_AREA_INVITED
+  PRIVATE_AREA_INVITE     // 招待操作の事実のみ。招待先の部屋と被招待者は記録しない
   DATA_EXPORTED
 }
 ```
@@ -264,9 +264,17 @@ enum AuditAction {
 `USER_MOVED` や `CONVERSATION_STARTED` のような値をここに足すことは、
 [02 壁4 解4](./02-problem-solving.md) の境界線を破ることを意味する。
 
+> **`PRIVATE_AREA_INVITE` は設計変更後の形である。**
+> 当初は「誰をどの部屋に招待したか」を残す設計だったが、それは1年間残る
+> 「誰と誰が一緒にいた記録」であり [00. 原則3](./00-overview.md) と衝突する。
+> 権限変更の追跡に必要な「誰が招待操作を行ったか」だけを残し、
+> **`targetId` に部屋 ID も被招待者も入れない**形に変更した
+> （[審査パッケージ 04 §3](../security-review-pack/04-audit-log.md)）。
+
 実装上の担保:
 - `AuditLog` への書き込みを 1つのモジュール（`audit.ts`）に集約する
 - **`AuditAction` の enum に値を追加する PR は、CI で必ず人間のレビューを要求する**（[06. ロードマップ](./06-roadmap.md)）
+- 仕様書は [審査パッケージ 04](../security-review-pack/04-audit-log.md)
 
 ---
 

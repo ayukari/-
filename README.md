@@ -89,6 +89,20 @@ Gather や ovice のようなバーチャルオフィスに近い見た目をし
 
 はじめて読むなら **[02. 問題解決](./docs/design/02-problem-solving.md)** から。他はすべてその帰結。
 
+## セキュリティ審査の提出パッケージ
+
+壁4（情シス審査）の成果物。**[docs/security-review-pack/](./docs/security-review-pack/)**
+
+| # | 内容 |
+| --- | --- |
+| 01 | [通信先とポート一覧](./docs/security-review-pack/01-endpoints.md) — 許可リストにコピペできる形式。**5行** |
+| 02 | [データフローと復号点](./docs/security-review-pack/02-data-flow.md) — どこで誰が中身を見られるか |
+| 03 | [保存データ一覧](./docs/security-review-pack/03-stored-data.md) — 保持期間・削除・**保存しないもの** |
+| 04 | [監査ログ仕様書](./docs/security-review-pack/04-audit-log.md) — 残す/残さないの境界 |
+| 05 | [想定問答集](./docs/security-review-pack/05-qa.md) — 26問への回答（未実装の項目も明記） |
+
+**設計段階の文書であり、実装との突き合わせが済むまで顧客に提出しない。**
+
 ---
 
 ## 越えるべき6つの壁
