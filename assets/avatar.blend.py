@@ -415,9 +415,8 @@ def build_top(i, w):
     fy = lambda z, out=0.006: front_y(z, rb, rt, z0, z1, out)
 
     if collar == 'open':
-        # 前を開けた形。差し色の当て布を V に置き、両脇に合わせの縁を立てる
-        zc = CHEST_Z - 0.060
-        ps.append(piece(disc(0.060, (0, fy(zc, 0.004), zc), (1.0, 1.5, 1), 3), ACC2, 'chest'))
+        # 前を開けた形。両脇に合わせの縁を立てるだけにする。
+        # 三角形の当て布を足していたときは、胸に白い短剣が刺さって見えた
         for s in (1, -1):
             for k in range(2):              # 太さが変わるので短く分けて表面に沿わせる
                 zz = HIP_Z + 0.085 + k * 0.17
@@ -434,10 +433,10 @@ def build_top(i, w):
             zz = HIP_Z + 0.090 + k * 0.17
             ps.append(piece(box((0, fy(zz), zz), (0.018, 0.020, 0.175)), DARK, 'chest'))
     if extra == 'inner':
-        # 前開きの中に見える1枚。開けた合わせの間に差し色を出す
+        # 前開きの中に見える1枚。合わせの間に幅のある面で出す
         for k in range(2):
             zz = HIP_Z + 0.100 + k * 0.16
-            ps.append(piece(box((0, fy(zz, 0.002), zz), (0.076, 0.018, 0.165)), ACC2, 'chest'))
+            ps.append(piece(box((0, fy(zz, 0.001), zz), (0.104, 0.016, 0.168)), ACC2, 'chest'))
     if extra == 'skirt':
         ps.append(piece(cone(0.158 * w, 0.218 * w, 0.34, (0, 0, HIP_Z - 0.115), 10), TOP, 'hips'))
 
