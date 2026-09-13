@@ -20,9 +20,10 @@
 
 - **[../security-review-pack/](../security-review-pack/)** — セキュリティ審査の提出パッケージ。
   通信先一覧・データフロー・保存データ一覧・監査ログ仕様書・想定問答集
-- **[../prototype/](../prototype/)** — 操作プロトタイプ（L0〜L7 実装済み）
+- **[../prototype/](../prototype/)** — 操作プロトタイプ（L0〜L7 実装済み・単体で完結）
+- **[../../client/](../../client/)** — 実物のクライアント（3D / 2D、実サーバに接続）
 - **[../../tools/](../../tools/)** — 接続診断ツール（`preflight.html`）
-- **[../../server/](../../server/)** — サーバ側の中核ロジック（Phase 1、テスト65件）
+- **[../../server/](../../server/)** — サーバ側の中核ロジックと WebSocket ゲートウェイ（Phase 1、テスト73件）
 
 ## 読む順番
 

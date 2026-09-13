@@ -43,6 +43,7 @@ export class Session {
     if (m.t === 'error') return this._violate(nowMs, m.code);
 
     switch (m.t) {
+      case 'intent':      return this.handleIntent(m.dx, m.dy, m.seq, nowMs);
       case 'enter':       return this._enter(m, nowMs, world);
       case 'setStatus':   return this._setStatus(m);
       case 'sit':         return this._sit(m, nowMs);

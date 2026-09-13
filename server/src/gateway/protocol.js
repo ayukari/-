@@ -9,6 +9,9 @@ const STATUSES = new Set(['open', 'focus', 'meet', 'away']);
 
 /** クライアント → サーバ で受け付ける型 */
 const SCHEMA = {
+  // 09 §10 の実装順ステップ1: まず JSON で通す。§3.2 のバイナリ化は最後に差し替える
+  intent:      m => isUnit(m.dx) && isUnit(m.dy) && isSeq(m.seq)
+                    ? { dx: m.dx, dy: m.dy, seq: m.seq } : null,
   enter:       m => isId(m.floor) ? { floor: m.floor } : null,
   setStatus:   m => STATUSES.has(m.status) ? { status: m.status } : null,
   sit:         m => isId(m.seatId) ? { seatId: m.seatId } : null,
@@ -42,5 +45,7 @@ export function parseClientMessage(raw) {
 const err = code => ({ t: 'error', code });
 const isId = v => typeof v === 'string' && v.length > 0 && v.length <= 64 && /^[A-Za-z0-9_.:-]+$/.test(v);
 const isEntity = v => Number.isInteger(v) && v >= 0 && v <= 65535;
+const isUnit = v => typeof v === 'number' && Number.isFinite(v) && v >= -1 && v <= 1;
+const isSeq = v => Number.isInteger(v) && v >= 0 && v <= 65535;
 
-export { STATUSES, isId, isEntity };
+export { STATUSES, isId, isEntity, isUnit, isSeq };

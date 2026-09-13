@@ -5,9 +5,14 @@
   "type": "module",
   "description": "ひだまり サーバ側の中核ロジック（Phase 1）",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "dev": "node src/main.js"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "three": "^0.186.0",
+    "ws": "^8.21.3"
   }
 }
