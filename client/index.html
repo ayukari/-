@@ -105,7 +105,11 @@ body{background:var(--ground);color:var(--ink);
 <div id="boot">読み込み中…</div>
 
 <script type="importmap">
-{ "imports": { "three": "/vendor/three.module.js", "three/": "/vendor/" } }
+{ "imports": {
+  "three": "/vendor/three.module.js",
+  "three/": "/vendor/",
+  "three/addons/": "/jsm/"
+} }
 </script>
 <script type="module" src="/src/app.js"></script>
 </body>

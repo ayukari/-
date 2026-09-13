@@ -10,6 +10,7 @@
  *   - アバターは 本体 + 頭 + 名札 の3つ。人数分しか増えない
  */
 import * as THREE from 'three';
+import { loadAvatars, makeAvatar, toonGradient } from './avatar.js';
 
 const TILE = 1;                 // 1タイル = 1ユニット ≒ 1.0m（10 §5）
 const WALL_H = 1.5;
@@ -115,24 +116,48 @@ export function createRenderer3D(el, world) {
   scene.add(ring);
 
   /* ---------------- アバター ---------------- */
-  /** entityId -> {group, body, head, label, tex} */
+  /** entityId -> Av */
   const avatars = new Map();
+  const gradient = toonGradient();
 
-  function makeAvatar(a) {
+  // モデルは後から届く。届くまでは簡易表示で動かし、届いたら差し替える。
+  // 読み込みに失敗しても簡易表示のまま止まらない（10 §9 の「3Dが落ちても続行する」）
+  let packs = null;
+  loadAvatars().then(p => {
+    packs = p;
+    for (const [id, av] of [...avatars]) { drop(av); avatars.delete(id); }
+  }).catch(err => {
+    console.warn('アバターのモデルを読めなかったので簡易表示で続ける', err);
+  });
+
+  function buildAvatar(a) {
+    const { sprite, tex } = makeLabel(a.name);
+    if (packs) {
+      const av = makeAvatar(packs, a, gradient);
+      sprite.position.y = 1.92;
+      av.root.add(sprite);
+      scene.add(av.root);
+      return { group: av.root, rig: av, label: sprite, tex, name: a.name, px: a.x, py: a.y, clip: 'idle' };
+    }
+    // 簡易表示（モデル到着前・読み込み失敗時）
     const g = new THREE.Group();
     const r = BODY_R[a.body ?? 0], bh = BODY_H[a.body ?? 0];
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(r, bh, 3, 10), mat(a.color));
     body.position.y = bh / 2 + r;
     const head = new THREE.Mesh(new THREE.SphereGeometry(r * 0.78, 12, 8), mat(0xf3dfc8));
-    head.position.y = bh + r * 2 + r * 0.5;   // カプセルの頂点より上に出す
-    // 向きが分かるように鼻を付ける（モデルは +z を正面とする、10 §5）
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.14), mat(0xd8b48c));
-    nose.position.set(0, head.position.y, r * 0.72);
-    const { sprite, tex } = makeLabel(a.name);
+    head.position.y = bh + r * 2 + r * 0.5;
     sprite.position.y = head.position.y + r * 1.35;
-    g.add(body, head, nose, sprite);
+    g.add(body, head, sprite);
     scene.add(g);
-    return { group: g, body, head, label: sprite, tex, name: a.name, shape: a.body ?? 0 };
+    return { group: g, body, head, label: sprite, tex, name: a.name, px: a.x, py: a.y, clip: 'idle' };
+  }
+
+  function drop(av) {
+    scene.remove(av.group);
+    av.tex.dispose();
+    av.label.material.dispose();
+    if (av.rig) av.rig.dispose();
+    else av.group.traverse(n => { n.geometry?.dispose?.(); n.material?.dispose?.(); });
   }
 
   function makeLabel(name) {
@@ -160,29 +185,43 @@ export function createRenderer3D(el, world) {
   const target = new THREE.Vector3();
   let camReady = false;
 
-  function render() {
+  function render(dtSec = 1 / 30) {
     const me = world.me;
 
     // アバターの生成・更新・破棄
     for (const a of world.actors.values()) {
       if (a.x === null) continue;
       let av = avatars.get(a.entityId);
-      if (!av) { av = makeAvatar(a); avatars.set(a.entityId, av); }
-      if (av.name !== a.name) {  // roster が後から届いた場合
-        scene.remove(av.group); disposeAvatar(av);
-        av = makeAvatar(a); avatars.set(a.entityId, av);
+      if (!av) { av = buildAvatar(a); avatars.set(a.entityId, av); }
+      if (av.name !== a.name) {          // roster が後から届いた場合は作り直す
+        drop(av); av = buildAvatar(a); avatars.set(a.entityId, av);
       }
-      const sit = a.seated ? 0.22 : 0;
-      av.group.position.set(a.x, -sit, a.y);
-      av.group.rotation.y = a.dir;
-      const focus = a.status === 'focus', away = a.status === 'away';
-      av.body.material.opacity = away ? 0.4 : 1;
-      av.body.material.transparent = away;
-      av.head.material.color.setHex(focus ? 0xc9d2dc : 0xf3dfc8);
+      // 座ったら席の中心に吸い付き、机を向く。
+      // 自分の座標のまま座らせると椅子をまたいで座ることになる
+      const seat = world.seatOf(a);
+      if (seat) {
+        av.group.position.set(seat.x + 0.5, 0, seat.y + 0.5);
+        av.group.rotation.y = world.seatFacing(seat);
+      } else {
+        av.group.position.set(a.x, 0, a.y);
+        av.group.rotation.y = a.dir;
+      }
+      av.label.position.y = seat ? 1.52 : 1.92;
+
+      // 動いているかは位置の変化で決める。サーバは「歩いている」を送ってこない
+      const speed = Math.hypot(a.x - av.px, a.y - av.py) / Math.max(dtSec, 1e-3);
+      av.px = a.x; av.py = a.y;
+      const want = a.seated ? 'sit' : (speed > 0.45 ? 'walk' : 'idle');
+      if (av.rig && want !== av.clip) { av.rig.play(want); av.clip = want; }
+      av.rig?.mixer.update(dtSec);
+
+      const away = a.status === 'away';
+      av.group.visible = true;
       av.label.visible = !away;
+      setFade(av, away ? 0.35 : 1);
     }
     for (const [id, av] of avatars) {
-      if (!world.actors.has(id)) { scene.remove(av.group); disposeAvatar(av); avatars.delete(id); }
+      if (!world.actors.has(id)) { drop(av); avatars.delete(id); }
     }
 
     // いま行動の対象になっているものに輪をつける
@@ -193,7 +232,7 @@ export function createRenderer3D(el, world) {
     // カメラ。固定の斜め見下ろし。縦持ちのときは角度を立てる
     if (me && me.x !== null) {
       const portrait = renderer.domElement.clientHeight > renderer.domElement.clientWidth;
-      const h = portrait ? 15 : 11.5, d = portrait ? 6 : 9.5;
+      const h = portrait ? 12.0 : 9.0, d = portrait ? 5.0 : 7.6;
       target.set(me.x, 0, me.y);
       const want = new THREE.Vector3(me.x, h, me.y + d);
       if (!camReady) { camera.position.copy(want); camReady = true; }
@@ -222,17 +261,23 @@ export function createRenderer3D(el, world) {
     return hit ? { x: hit.point.x, y: hit.point.z } : null;
   }
 
-  const disposeAvatar = av => {
-    av.tex.dispose();
-    av.group.traverse(n => { n.geometry?.dispose?.(); n.material?.dispose?.(); });
-  };
+  /** 離席は薄く見せる。消すと「居ないこと」になってしまうので残す */
+  function setFade(av, k) {
+    av.group.traverse(n => {
+      if (!n.isMesh) return;
+      n.material.transparent = k < 1;
+      n.material.opacity = k;
+      n.material.depthWrite = k >= 1;
+    });
+  }
 
   return {
     kind: '3d',
     render, resize, pick,
     info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
     dispose() {
-      for (const av of avatars.values()) disposeAvatar(av);
+      for (const av of avatars.values()) drop(av);
+      gradient.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     },

@@ -18,11 +18,12 @@ const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2',
+  '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json',
 };
 
 const COLORS = ['#C8873C', '#4F8299', '#7A6FA8', '#5F8C6B', '#B25F6A', '#8A7B5E'];
 
-export function createGateway({ clientDir, vendorDir, coreDir, tickHz = 10 }) {
+export function createGateway({ clientDir, vendorDir, coreDir, jsmDir, tickHz = 10 }) {
   const world = new World();
   /** @type {Map<import('ws').WebSocket, {session:Session}>} */
   const peers = new Map();
@@ -40,6 +41,7 @@ export function createGateway({ clientDir, vendorDir, coreDir, tickHz = 10 }) {
       let base = clientDir, rel;
       if (url.pathname.startsWith('/vendor/')) { base = vendorDir; rel = url.pathname.slice(8); }
       else if (url.pathname.startsWith('/core/')) { base = coreDir; rel = url.pathname.slice(6); }
+      else if (url.pathname.startsWith('/jsm/')) { base = jsmDir; rel = url.pathname.slice(5); }
       else rel = (url.pathname === '/' ? 'index.html' : url.pathname.slice(1));
       // パストラバーサルを弾く
       const safe = normalize(rel).replace(/^(\.\.[/\\])+/, '');

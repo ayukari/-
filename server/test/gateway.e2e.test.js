@@ -20,6 +20,7 @@ before(async () => {
     clientDir: join(here, '../../client'),
     vendorDir: join(here, '../node_modules/three/build'),
     coreDir: join(here, '../src/core'),
+    jsmDir: join(here, '../node_modules/three/examples/jsm'),
   });
   port = (await gw.listen(0)).port;
 });

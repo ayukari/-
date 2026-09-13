@@ -151,6 +151,28 @@ export class ClientWorld {
     return nearbyActors(me, others).map(o => this.actors.get(o.id));
   }
 
+  /**
+   * その人が座っている席。
+   *
+   * 着席中は必ずその席のタイルの上にいる（サーバがそう検証している。09 §5.2 ①）ので、
+   * 足元から引ける。自分が入室する前から座っていた人は seat メッセージを受け取って
+   * いないので、seatId には頼れない。
+   */
+  seatOf(a) {
+    if (!a?.seated || a.x === null) return null;
+    const under = this.grid.objectAt(a.x, a.y);
+    if (under?.kind === 'seat') return under;
+    return a.seatId ? this.grid.objectById(a.seatId) : null;
+  }
+
+  /** 席から見て机のある向き。座ったら机を向く */
+  seatFacing(seat) {
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      if (this.grid.isBlocked(seat.x + dx, seat.y + dy)) return Math.atan2(dx, dy);
+    }
+    return 0;
+  }
+
   areaOfMe() {
     const me = this.me;
     return me && me.x !== null ? this.grid.areaAt(me.x, me.y) : null;

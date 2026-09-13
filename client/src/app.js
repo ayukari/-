@@ -152,7 +152,7 @@ async function boot() {
     const [dx, dy] = inputVector();
     world.predict(dx, dy, dt);
     world.interpolate(dt);
-    renderer.render();
+    renderer.render(dt);
 
     // 意思の送信は 10Hz。変化が無ければ止まったことを1回だけ伝える
     if (now - lastIntent >= 1000 / INTENT_HZ) {
