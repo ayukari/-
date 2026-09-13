@@ -89,10 +89,10 @@ function stats() {
     const g = o.geometry;
     tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
   });
-  const over = tris > 1200;
+  const over = tris > 1400;   // server/test/assets.test.js と同じ値
   document.getElementById('info').innerHTML = `
     <div>三角形 <b class="${over ? 'over' : ''}">${tris.toLocaleString()}</b></div>
-    <div>予算（10 §4） <b>1,200</b></div>
+    <div>上限（10 §4） <b>1,400</b></div>
     <div>ドローコール／人 <b>${meshes}</b></div>
     <div>ボーン <b>${countBones()}</b></div>
     <div>クリップ <b>${clipNames.length}</b></div>
@@ -136,7 +136,7 @@ renderer.setAnimationLoop(now => {
   renderer.render(scene, camera);
 });
 globalThis.__preview = {
-  set: (b, c) => { body = b; clip = c; build(); rig.play(c); },
+  set: (b, c) => { body = b; clip = c; document.getElementById('bodySel').value = String(b); build(); rig.play(c); },
   spin: v => { spin = v; },
   view: (y, p, d, h) => { yaw = y; pitch = p; dist = d; if (h != null) look = h; },
 };
