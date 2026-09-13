@@ -504,6 +504,19 @@ const env = {
     return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; },
   css: n => getComputedStyle(document.documentElement).getPropertyValue(n).trim(),
 };
+/** WebGL が使えるか。3D を標準にした以上、ここが false のとき確実に落ちることが必須条件 */
+env.webgl = (() => {
+  try {
+    if (!window.WebGLRenderingContext) return false;
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+    if (!gl) return false;
+    // ソフトウェアレンダラ（VDI など）も「使える」と判定する。
+    // 遅いかどうかは起動後のフレームタイム計測で扱う（[02 §6.8]）
+    return true;
+  } catch(_){ return false; }
+})();
+
 const uid = () => Math.random().toString(36).slice(2,10);
 const selfId = (()=>{ try { let v = localStorage.getItem('hidamari.id');
   if (!v){ v = uid(); localStorage.setItem('hidamari.id', v); } return v; } catch(_){ return uid(); } })();
@@ -1392,7 +1405,8 @@ const Bookings = {
 
 /* ===== 16. はしごの状態 ================================================== */
 const Ladder = () => [
-  { n:'L0', t:'歩く・近づく・座る・ノック', d:'空間と会話の最小形', on:true, note:'—' },
+  { n:'L0', t:'歩く・近づく・座る・ノック', d:'空間と会話の最小形', on:true,
+    note: env.webgl ? '3D で表示中' : 'WebGL 非対応 → 2D' },
   { n:'L1', t:'貼り紙・チームのボード・案内板・観葉植物', d:'Registry に種別を足しただけ', on:true, note:'配線の追加なし' },
   { n:'L2', t:'ドアと複数フロア', d:'部屋 ⇄ ラウンジ', on:true, note:'rebuild() を1本追加' },
   { n:'L3', t:'実際のマイク', d:'通話中だけ getUserMedia を呼ぶ',
@@ -1544,6 +1558,30 @@ function InputAdapter(stageEl, onPick, onAction){
 }
 
 /* ===== 19. アバター作成のプレビュー ===================================== */
+/** WebGL が無いときの 2D プレビュー。3D を必須にしないための最初の受け皿 */
+function FlatAvatarPreview(canvas){
+  const g = canvas.getContext('2d');
+  function draw(){
+    const dpr = Math.min(devicePixelRatio,2), W = canvas.clientWidth || 300;
+    if (canvas.width !== W*dpr){ canvas.width = W*dpr; canvas.height = W*dpr; }
+    g.setTransform(dpr,0,0,dpr,0,0);
+    g.clearRect(0,0,W,W);
+    const cx = W/2, cy = W*0.58, s = W/300;
+    const scale = [1,.86,1.14][World.me.body||0], ht = [1,1.12,.92][World.me.body||0];
+    g.fillStyle = env.css('--surface'); g.beginPath();
+    g.ellipse(cx, cy+70*s, 92*s, 26*s, 0, 0, 7); g.fill();
+    g.fillStyle = World.me.color; g.beginPath();
+    g.moveTo(cx-46*s*scale, cy+62*s); g.lineTo(cx-40*s*scale, cy-34*s*ht);
+    g.lineTo(cx+40*s*scale, cy-34*s*ht); g.lineTo(cx+46*s*scale, cy+62*s); g.closePath(); g.fill();
+    g.fillStyle = '#E8C9A8'; g.beginPath(); g.arc(cx, cy-72*s*ht, 40*s, 0, 7); g.fill();
+    g.fillStyle = World.me.color; g.beginPath();
+    g.arc(cx, cy-76*s*ht, 42*s, Math.PI, 0); g.fill();
+    g.fillStyle = '#2A2119';
+    [-14,14].forEach(dx => { g.beginPath(); g.arc(cx+dx*s, cy-66*s*ht, 4.5*s, 0, 7); g.fill(); });
+  }
+  return { rebuild: draw };
+}
+
 function AvatarPreview(canvas){
   const r = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
   r.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -1623,19 +1661,32 @@ function AvatarPreview(canvas){
   function enterRoom(team){
     Store.set({ team });
     if (!mounted){
-      renderers['3d'].mount(stage); renderers['2d'].mount(stage); renderers['list'].mount($('listGrid'));
+      if (env.webgl){
+        try { renderers['3d'].mount(stage); }
+        catch(e){ renderers['3d'] = null; }      // 生成に失敗しても止めない
+      } else renderers['3d'] = null;
+      renderers['2d'].mount(stage); renderers['list'].mount($('listGrid'));
       Whiteboard.attach($('wbCanvas'));
+      if (!renderers['3d']){
+        const b3 = $('modes').querySelector('[data-m="3d"]');
+        if (b3){ b3.disabled = true; b3.title = 'この端末では WebGL が使えません'; }
+      }
       mounted = true; loop();
       Net.connect(); DB.connect();
     }
-    go(3); setMode('3d'); Ui.renderPanel();
+    go(3);
+    setMode(renderers['3d'] ? '3d' : '2d');
+    if (!renderers['3d']) Bus.emit(EV.NOTICE,
+      'この端末では WebGL が使えないため、2D 表示で起動しました。同じ場所・同じ会話が使えます');
+    Ui.renderPanel();
     Bus.emit(EV.ENTERED, team);
   }
 
   function setMode(m){
+    if (m === '3d' && !renderers['3d']){ Ui.toast('この端末では WebGL が使えません'); return; }
     Store.set({ mode:m });
     [...$('modes').children].forEach(b => b.setAttribute('aria-pressed', b.dataset.m===m));
-    const e3 = renderers['3d'].el(), e2 = renderers['2d'].el();
+    const e3 = renderers['3d'] && renderers['3d'].el(), e2 = renderers['2d'].el();
     if (e3) e3.style.display = m==='3d' ? 'block' : 'none';
     if (e2) e2.style.display = m==='2d' ? 'block' : 'none';
     stage.style.display = m==='list' ? 'none' : 'block';
@@ -1649,7 +1700,7 @@ function AvatarPreview(canvas){
   function resize(){
     const w = stage.clientWidth, h = stage.clientHeight, e2 = renderers['2d'].el();
     if (e2){ e2.style.width = w+'px'; e2.style.height = h+'px'; }
-    renderers['3d'].resize(w,h);
+    if (renderers['3d']) renderers['3d'].resize(w,h);
     if (Ui.isWbOpen()) Whiteboard.redraw();
   }
 
@@ -1690,7 +1741,7 @@ function AvatarPreview(canvas){
     const now = cur || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark'); onTheme();
   };
-  function onTheme(){ if (mounted) renderers['3d'].theme(); preview && preview.rebuild();
+  function onTheme(){ if (mounted && renderers['3d']) renderers['3d'].theme(); preview && preview.rebuild();
     if (Ui.isWbOpen()) Whiteboard.redraw(); }
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', onTheme);
   addEventListener('resize', ()=>{ if (Store.get().screen===3) resize(); });
@@ -1710,7 +1761,7 @@ function AvatarPreview(canvas){
   Bus.on(EV.ANSWERED, ({name, accepted}) => Ui.toast(accepted
     ? `${name.split(' ')[0]}さんが「今いいよ」。通話が始まりました`
     : `${name.split(' ')[0]}さんからの返事はありませんでした（それも正常です）`));
-  Bus.on(EV.FLOOR, ({name}) => { renderers['3d'].rebuild(); renderers['2d'].rebuild(); renderers['list'].rebuild();
+  Bus.on(EV.FLOOR, ({name}) => { renderers['3d'] && renderers['3d'].rebuild(); renderers['2d'].rebuild(); renderers['list'].rebuild();
     Ui.renderPanel(); resize(); Ui.toast(name + 'に移動しました'); });
   Bus.on(EV.NET, ()=> Ui.renderCall());
 
@@ -1747,7 +1798,8 @@ function AvatarPreview(canvas){
     }
   }
 
-  preview = AvatarPreview($('mkCanvas'));
+  preview = env.webgl ? AvatarPreview($('mkCanvas')) : FlatAvatarPreview($('mkCanvas'));
+  if (!env.webgl) requestAnimationFrame(()=> preview.rebuild());
   Ui.renderCall(); Ui.renderAction();
 })();
 </script>
