@@ -232,7 +232,8 @@ export function createRenderer3D(el, world) {
     // カメラ。固定の斜め見下ろし。縦持ちのときは角度を立てる
     if (me && me.x !== null) {
       const portrait = renderer.domElement.clientHeight > renderer.domElement.clientWidth;
-      const h = portrait ? 12.0 : 9.0, d = portrait ? 5.0 : 7.6;
+      // 顔が読める距離まで寄せる。広く見せるより、誰が居るか分かるほうを取る
+      const h = portrait ? 10.0 : 7.4, d = portrait ? 4.2 : 6.3;
       target.set(me.x, 0, me.y);
       const want = new THREE.Vector3(me.x, h, me.y + d);
       if (!camReady) { camera.position.copy(want); camReady = true; }

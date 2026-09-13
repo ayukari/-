@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>アバター100体</title>
+<style>
+:root{--bg:#E9ECF0;--ink:#191E25;--muted:#78838F;--line:#D3D9E0;--surface:#fff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#13171C;--ink:#E7EBF0;--muted:#7C8794;--line:#303945;--surface:#1B2128;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+#stage{position:fixed;inset:0}
+#stage canvas{display:block;width:100%;height:100%}
+.bar{position:fixed;left:12px;bottom:12px;right:12px;z-index:5;background:var(--surface);
+  border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;gap:7px;
+  align-items:center;flex-wrap:wrap;font-size:12.5px}
+button{font:inherit;font-size:12.5px;padding:6px 11px;border:1px solid var(--line);
+  border-radius:8px;background:var(--bg);color:var(--ink);cursor:pointer}
+button.on{background:var(--ink);color:var(--bg);border-color:transparent}
+.info{position:fixed;top:12px;left:12px;z-index:5;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:10px 12px;font-size:11.5px;color:var(--muted);line-height:1.9;min-width:224px}
+.info b{color:var(--ink);font-weight:500;float:right}
+a{color:var(--muted);font-size:12px;margin-left:auto}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div class="info" id="info">読み込み中…</div>
+<div class="bar">
+  <button data-mode="random" class="on">100体ランダム</button>
+  <button data-mode="hair">髪型ぜんぶ</button>
+  <button data-mode="top">トップスぜんぶ</button>
+  <button data-mode="bottom">ボトムスぜんぶ</button>
+  <button data-mode="shoe">靴ぜんぶ</button>
+  <button data-mode="acc">小物ぜんぶ</button>
+  <button id="anim">動かす</button>
+  <a href="/avatar-preview.html">← 1体ずつ見る</a>
+</div>
+<script type="importmap">
+{ "imports": { "three": "/vendor/three.module.js", "three/": "/vendor/", "three/addons/": "/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { loadAvatars, makeAvatar, toonGradient, lookFor, VARIETY } from '/src/avatar.js';
+
+const el = document.getElementById('stage');
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+el.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(dark ? 0x13171c : 0xe9ecf0);
+scene.add(new THREE.HemisphereLight(0xffffff, dark ? 0x202830 : 0xc9d2dc, 1.5));
+const sun = new THREE.DirectionalLight(0xfff4e2, 0.7); sun.position.set(3, 8, 6); scene.add(sun);
+
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -60, 60);
+const gradient = toonGradient();
+const packs = await loadAvatars();
+
+/** 種類数（avatar.blend.py と対応） */
+const COUNT = { hair: 14, top: 10, bottom: 8, shoe: 5, acc: 8 };
+let rigs = [], cols = 10, animate = false;
+
+function clear() {
+  for (const r of rigs) { scene.remove(r.root); r.dispose(); }
+  rigs = [];
+}
+
+const CELL_W = 1.00, CELL_H = 2.00;
+
+/** 1体置く。奥行きではなく上下に並べる。真正面から見るので前後に重ならない */
+function place(look, i) {
+  const rig = makeAvatar(packs, { look }, gradient);
+  const row = Math.floor(i / cols), col = i % cols;
+  rig.root.position.set((col - (cols - 1) / 2) * CELL_W, -row * CELL_H, 0);
+  scene.add(rig.root);                      // モデルは +Z が正面。カメラは +Z 側にいる
+  rigs.push(rig);
+  return rig;
+}
+
+function build(mode) {
+  clear();
+  let looks = [];
+  if (mode === 'random') {
+    cols = 10;
+    looks = Array.from({ length: 100 }, (_, i) => lookFor({ userId: 'gallery-' + i }));
+  } else {
+    const n = COUNT[mode];
+    cols = Math.min(n, 7);
+    // 同じ素体に、その部位だけを取り替えて並べる。差が一目で分かる
+    const base = lookFor({ userId: 'sheet' });
+    looks = Array.from({ length: n }, (_, i) => ({ ...base, [mode]: i }));
+  }
+  looks.forEach((lk, i) => place(lk, i));
+  fit();
+  const tris = rigs.reduce((n, r) => n + r.tris, 0);
+  document.getElementById('info').innerHTML = `
+    <div>表示中 <b>${rigs.length} 体</b></div>
+    <div>三角形（合計） <b>${tris.toLocaleString()}</b></div>
+    <div>1体あたり <b>${Math.round(tris / rigs.length).toLocaleString()}</b></div>
+    <div>ドローコール <b>${rigs.length}</b></div>
+    <div>テクスチャ <b>0</b></div>
+    <div>形の組合せ <b>${VARIETY.shapes.toLocaleString()}</b></div>
+    <div>配色の組合せ <b>${VARIETY.colors.toLocaleString()}</b></div>
+    <div>パーツ数 <b>${VARIETY.parts}</b></div>`;
+}
+
+function fit() {
+  if (!rigs.length) return;
+  const rows = Math.ceil(rigs.length / cols);
+  const top = 1.80, bottom = -(rows - 1) * CELL_H - 0.05;
+  const cy = (top + bottom) / 2;
+  const aspect = el.clientWidth / Math.max(1, el.clientHeight);
+  // 下のボタン列（約90px）に最終行が隠れないよう余白を足す
+  const padY = (top - bottom) * (95 / Math.max(200, el.clientHeight));
+  let halfW = cols * CELL_W / 2 + 0.12, halfH = (top - bottom) / 2 + 0.12 + padY / 2;
+  if (halfW / halfH > aspect) halfH = halfW / aspect; else halfW = halfH * aspect;
+  camera.left = -halfW; camera.right = halfW;
+  camera.top = halfH; camera.bottom = -halfH;
+  camera.position.set(0, cy - padY / 2, 10);
+  camera.lookAt(0, cy - padY / 2, 0);
+  camera.updateProjectionMatrix();
+}
+
+function resize() {
+  renderer.setSize(el.clientWidth, el.clientHeight, false);
+  fit();
+}
+addEventListener('resize', resize);
+
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === b));
+  build(b.dataset.mode);
+});
+document.getElementById('anim').onclick = e => {
+  animate = !animate; e.target.classList.toggle('on', animate);
+};
+
+resize();
+build('random');
+
+let last = performance.now();
+renderer.setAnimationLoop(now => {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (animate) for (const r of rigs) r.mixer.update(dt);
+  renderer.render(scene, camera);
+});
+globalThis.__gallery = { build, count: () => rigs.length, looks: () => rigs.map(r => r.look) };
+</script></body></html>
