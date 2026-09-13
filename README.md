@@ -86,6 +86,7 @@ Gather や ovice のようなバーチャルオフィスに近い見た目をし
 | 06 | [ロードマップとリスク](./docs/design/06-roadmap.md) | Phase 0〜5 と各 DoD |
 | 07 | [接続の安全性](./docs/design/07-security.md) | 経路ごとの暗号化、E2EE、鍵配布、限界 |
 | 08 | [拡張のしかた](./docs/design/08-extensibility.md) | 配線と、できることのはしご |
+| 09 | [ワイヤプロトコル仕様](./docs/design/09-protocol.md) | 位置のバイナリ形式、サーバ権威の検証規則 |
 
 はじめて読むなら **[02. 問題解決](./docs/design/02-problem-solving.md)** から。他はすべてその帰結。
 
@@ -102,6 +103,13 @@ Gather や ovice のようなバーチャルオフィスに近い見た目をし
 | 05 | [想定問答集](./docs/security-review-pack/05-qa.md) — 26問への回答（未実装の項目も明記） |
 
 **設計段階の文書であり、実装との突き合わせが済むまで顧客に提出しない。**
+
+## 接続診断ツール
+
+**[tools/preflight.html](./tools/preflight.html)** — 導入前に「あなたの会社のネットワークで動くか」を判定する単体 HTML。
+外部依存ゼロ。自社サーバに置いて `https://` で開く。結果は印刷 / PDF 保存で情シスに渡せる。
+
+**UDP が塞がれていても TURN over TCP/443 が通れば「利用できます」と判定する** のが要点。
 
 ---
 

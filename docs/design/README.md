@@ -18,6 +18,7 @@
 - **[../security-review-pack/](../security-review-pack/)** — セキュリティ審査の提出パッケージ。
   通信先一覧・データフロー・保存データ一覧・監査ログ仕様書・想定問答集
 - **[../prototype/](../prototype/)** — 操作プロトタイプ（L0〜L7 実装済み）
+- **[../../tools/](../../tools/)** — 接続診断ツール（`preflight.html`）
 
 ## 読む順番
 
