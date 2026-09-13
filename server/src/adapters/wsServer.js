@@ -103,7 +103,10 @@ export function createGateway({ clientDir, vendorDir, coreDir, jsmDir, tickHz = 
 
   /** Session の戻り値を実際の送信に変える。to / broadcast の解決はここだけが知る */
   function deliver(ws, session, r) {
-    if (!r || !r.out) return;
+    if (!r) return;
+    // 前の部屋を出たことを、その部屋の人だけに伝える（09 §3.4）
+    if (r.left) broadcast(r.left.room, { t: 'roster', add: [], remove: [r.left.entityId] });
+    if (!r.out) return;
     for (const msg of r.out) {
       if (r.to) sendToPeer(session.room, r.to, msg);
       else if (r.broadcast) broadcast(session.room, msg);
@@ -144,7 +147,15 @@ export function createGateway({ clientDir, vendorDir, coreDir, jsmDir, tickHz = 
 
   return {
     listen: (port, host = '127.0.0.1') => new Promise(res => http.listen(port, host, () => res(http.address()))),
-    close: () => { clearInterval(timer); wss.close(); http.close(); },
+    close: () => {
+      clearInterval(timer);
+      // ★ wss.close() は受付をやめるだけで、つながっている接続は切らない。
+      //   切らないとプロセスが終われない（テストが固まって気づいた）
+      for (const ws of wss.clients) ws.terminate();
+      peers.clear();
+      wss.close();
+      http.close();
+    },
     world, peers,
   };
 }

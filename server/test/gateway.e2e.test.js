@@ -157,6 +157,28 @@ test('近くにいれば声をかけられ、集中中の相手には届かな�
   a.ws.close(); b.ws.close();
 });
 
+test('フロアを移ると、前の部屋の人の名簿から消える', async () => {
+  // ★ 伝えないと、移った本人が前の部屋に立ったまま残る（誰も動かさないので消えない）
+  const a = connect('e2eI', 'あさひ'), b = connect('e2eJ', 'ゆう');
+  try {
+    await Promise.all([a.hello(), b.hello()]);
+    await sleep(300);
+    const gone = a.self;
+
+    a.got.length = 0; b.got.length = 0;
+    await sleep(2100);                            // enter は2秒に1回まで（09 §5.3）
+    a.send({ t: 'enter', floor: 'office' });      // 同じフロアへ入り直す = 一度出る
+
+    const r = await waitFor(b, m => m.t === 'roster' && m.remove.includes(gone));
+    assert.ok(r);
+    // 入り直した本人には新しい entityId が渡る
+    const hello = await waitFor(a, m => m.t === 'hello');
+    assert.notEqual(hello.selfEntityId, gone);
+  } finally {
+    a.ws.close(); b.ws.close();
+  }
+});
+
 test('切断すると名簿から消える', async () => {
   const a = connect('e2eG', 'つかさ'), b = connect('e2eH', 'のぞみ');
   await Promise.all([a.hello(), b.hello()]);

@@ -70,16 +70,23 @@ export class Session {
     }
     const room = world.roomFor(this.orgId, floor);
     if (!room) return { out: [{ t: 'error', code: 'not_found' }] };
-    if (this.room) this.room.leave(this.peerId);
+
+    // ★ 前の部屋から抜けたことを、その部屋の人に伝える。
+    //   伝えないと、移った本人が前の部屋に立ったまま残る
+    const left = this.room ? this.room.leave(this.peerId) : null;
+    const before = left ? { room: this.room, entityId: left.entityId } : null;
     this.room = room;
     const a = room.join(this.peerId, {
       userId: this.userId, name: this.profile.name,
       color: this.profile.color, body: this.profile.body,
     });
-    return { out: [
-      { t: 'hello', selfEntityId: a.entityId, floor, tickRate: 10, serverTime: nowMs, protocol: 1 },
-      { t: 'roster', add: this._rosterAll(), remove: [] },
-    ] };
+    return {
+      out: [
+        { t: 'hello', selfEntityId: a.entityId, floor, tickRate: 10, serverTime: nowMs, protocol: 1 },
+        { t: 'roster', add: this._rosterAll(), remove: [] },
+      ],
+      left: before,
+    };
   }
 
   _setStatus({ status }) {

@@ -49,8 +49,9 @@ async function boot() {
       case '_open':  setNet(true);  break;
       case '_close': setNet(false); break;
       case 'hello':
-        world.selfEntityId = m.selfEntityId;
-        $('boot').remove();
+        world.reset(m.selfEntityId);     // 再接続のときは前の状態を捨てる
+        renderPanel();
+        $('boot')?.remove();
         break;
       case 'roster': world.applyRoster(m); renderPanel(); break;
       case 'tick':   world.applyTick(m); break;

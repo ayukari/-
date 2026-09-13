@@ -14,6 +14,10 @@ import { loadAvatars, makeAvatar, toonGradient } from './avatar.js';
 
 const TILE = 1;                 // 1タイル = 1ユニット ≒ 1.0m（10 §5）
 const WALL_H = 1.5;
+/** ここまでは毎フレーム動かす（タイル） */
+const ANIM_NEAR = 9;
+/** それより遠い人は何フレームに1回動かすか */
+const ANIM_FAR_EVERY = 3;
 const BODY_R = [0.26, 0.31, 0.36];
 const BODY_H = [0.62, 0.58, 0.52];
 
@@ -119,6 +123,7 @@ export function createRenderer3D(el, world) {
   /** entityId -> Av */
   const avatars = new Map();
   const gradient = toonGradient();
+  let frame = 0;
 
   // モデルは後から届く。届くまでは簡易表示で動かし、届いたら差し替える。
   // 読み込みに失敗しても簡易表示のまま止まらない（10 §9 の「3Dが落ちても続行する」）
@@ -137,7 +142,9 @@ export function createRenderer3D(el, world) {
       sprite.position.y = 1.92;
       av.root.add(sprite);
       scene.add(av.root);
-      return { group: av.root, rig: av, label: sprite, tex, name: a.name, px: a.x, py: a.y, clip: 'idle' };
+      // 位相をずらす。同じフレームにまとめて更新すると、そのフレームだけ跳ねる
+      return { group: av.root, rig: av, label: sprite, tex, name: a.name,
+               px: a.x, py: a.y, clip: 'idle', phase: a.entityId % ANIM_FAR_EVERY };
     }
     // 簡易表示（モデル到着前・読み込み失敗時）
     const g = new THREE.Group();
@@ -149,7 +156,8 @@ export function createRenderer3D(el, world) {
     sprite.position.y = head.position.y + r * 1.35;
     g.add(body, head, sprite);
     scene.add(g);
-    return { group: g, body, head, label: sprite, tex, name: a.name, px: a.x, py: a.y, clip: 'idle' };
+    return { group: g, body, head, label: sprite, tex, name: a.name,
+            px: a.x, py: a.y, clip: 'idle', phase: a.entityId % ANIM_FAR_EVERY };
   }
 
   function drop(av) {
@@ -187,6 +195,7 @@ export function createRenderer3D(el, world) {
 
   function render(dtSec = 1 / 30) {
     const me = world.me;
+    frame++;
 
     // アバターの生成・更新・破棄
     for (const a of world.actors.values()) {
@@ -213,7 +222,15 @@ export function createRenderer3D(el, world) {
       av.px = a.x; av.py = a.y;
       const want = a.seated ? 'sit' : (speed > 0.45 ? 'walk' : 'idle');
       if (av.rig && want !== av.clip) { av.rig.play(want); av.clip = want; }
-      av.rig?.mixer.update(dtSec);
+
+      // 遠い人はアニメーションを間引く（10 §4）。
+      // 骨の行列計算は1人18本ぶんCPUでやるので、人数がそのまま効く。
+      // 25人ぶんを毎フレーム回すと、描画より先にここが詰まる
+      if (av.rig) {
+        const far = me ? Math.hypot(a.x - me.x, a.y - me.y) > ANIM_NEAR : false;
+        if (!far) av.rig.mixer.update(dtSec);
+        else if ((frame + av.phase) % ANIM_FAR_EVERY === 0) av.rig.mixer.update(dtSec * ANIM_FAR_EVERY);
+      }
 
       const away = a.status === 'away';
       av.group.visible = true;
@@ -262,13 +279,19 @@ export function createRenderer3D(el, world) {
     return hit ? { x: hit.point.x, y: hit.point.z } : null;
   }
 
-  /** 離席は薄く見せる。消すと「居ないこと」になってしまうので残す */
+  /**
+   * 離席は薄く見せる。消すと「居ないこと」になってしまうので残す。
+   * 変わったときだけ触る（毎フレーム全ノードを走査すると人数ぶん効く）
+   */
   function setFade(av, k) {
+    if (av.fade === k) return;
+    av.fade = k;
     av.group.traverse(n => {
       if (!n.isMesh) return;
       n.material.transparent = k < 1;
       n.material.opacity = k;
       n.material.depthWrite = k >= 1;
+      n.material.needsUpdate = true;
     });
   }
 

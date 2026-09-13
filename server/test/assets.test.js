@@ -48,18 +48,28 @@ function meshTris({ json }) {
 
 const jointNames = ({ json }) => json.skins[0].joints.map(i => json.nodes[i].name);
 
-/** u16 正規化のアクセサを読む（頂点カラーがこれ） */
-function readU16Norm(json, bin, accIndex) {
+/**
+ * 正規化アクセサを読む。
+ * ★ 格納型を決め打ちにしない。assets/optimize.mjs の量子化で u16 → u8 に変わる。
+ *   テストが見るべきは「部位IDが読み出せること」であって、何ビットで入っているかではない
+ */
+const NORM = {
+  5121: { size: 1, max: 255, read: (b, o) => b.readUInt8(o) },
+  5123: { size: 2, max: 65535, read: (b, o) => b.readUInt16LE(o) },
+  5126: { size: 4, max: 1, read: (b, o) => b.readFloatLE(o) },
+};
+function readNorm(json, bin, accIndex) {
   const acc = json.accessors[accIndex];
-  assert.equal(acc.componentType, 5123, '想定と違う型');
+  const t = NORM[acc.componentType];
+  assert.ok(t, `想定していない型 ${acc.componentType}`);
   const bv = json.bufferViews[acc.bufferView];
   const size = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[acc.type];
-  const stride = bv.byteStride ?? size * 2;
+  const stride = bv.byteStride ?? size * t.size;
   const base = (bv.byteOffset ?? 0) + (acc.byteOffset ?? 0);
   const out = [];
   for (let i = 0; i < acc.count; i++) {
     const row = [];
-    for (let c = 0; c < size; c++) row.push(bin.readUInt16LE(base + i * stride + c * 2) / 65535);
+    for (let c = 0; c < size; c++) row.push(t.read(bin, base + i * stride + c * t.size) / t.max);
     out.push(row);
   }
   return out;
@@ -108,7 +118,7 @@ for (const f of files) {
       const acc = m.primitives[0].attributes.COLOR_0;
       // ★ VEC3 で書き出されるとアルファが落ち、クライアントが誰も塗り替えられなくなる
       assert.equal(json.accessors[acc].type, 'VEC4', `${m.name}: COLOR_0 が VEC4 でない`);
-      for (const c of readU16Norm(json, bin, acc)) parts.add(Math.floor(c[3] * PART_N));
+      for (const c of readNorm(json, bin, acc)) parts.add(Math.floor(c[3] * PART_N));
     }
     for (const got of parts) assert.ok(got >= 0 && got < PART_N, `不正な部位ID ${got}`);
     assert.ok(parts.size >= 2, '部位が1種類しかない');

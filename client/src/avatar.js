@@ -16,8 +16,7 @@
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, deinterleaveGeometry } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /** assets/avatar.blend.py の PART_N と一致していること */
 const PART_N = 16;
@@ -72,10 +71,44 @@ export function loadAvatars() {
         if (o.isSkinnedMesh) index.set(`${o.name}@${i}`, o);
       }));
       checkJointOrder(common, bodies);
-      return { rig: common.scene, clips: common.animations, index };
+      return { ...makeRigTemplate(common.scene), clips: common.animations, index };
     });
   return loading;
 }
+
+/**
+ * 骨だけの雛形を1つ作る。
+ *
+ * ★ SkeletonUtils.clone() は「スキンメッシュ1つにつき Skeleton を1つ」作る。
+ *   共通ファイルには26個のパーツが入っているので、素直に複製すると
+ *   1人あたり Skeleton が26個できて、25個は捨てることになる。
+ *   Skeleton は骨行列のテクスチャを持つので、これは実際の無駄になる。
+ *   メッシュを外した雛形を作っておき、骨だけ複製して Skeleton は自分で1つ組む。
+ */
+function makeRigTemplate(scene) {
+  let src = null;
+  scene.traverse(o => { if (o.isSkinnedMesh && !src) src = o; });
+  if (!src) throw new Error('共通ファイルにスキンメッシュが無い');
+
+  const template = scene.clone(true);
+  const slotName = src.parent?.name ?? null;
+  for (const m of [...collect(template, o => o.isSkinnedMesh)]) m.removeFromParent();
+
+  return {
+    rig: template,
+    boneNames: src.skeleton.bones.map(b => b.name),
+    boneInverses: src.skeleton.boneInverses.map(m => m.clone()),
+    bindMatrix: src.bindMatrix.clone(),
+    slot: { name: slotName, position: src.position.clone(),
+            quaternion: src.quaternion.clone(), scale: src.scale.clone() },
+  };
+}
+
+const collect = (root, pred) => {
+  const out = [];
+  root.traverse(o => { if (pred(o)) out.push(o); });
+  return out;
+};
 
 /**
  * ★ 体型ファイルのジオメトリを共通ファイルの骨に結びつけるので、
@@ -158,39 +191,32 @@ const pad = n => String(n).padStart(2, '0');
 
 /* ---------------- 組み立て ---------------- */
 /**
- * COLOR_0 のアルファに入っている部位IDを見て RGB を塗り直す。
+ * 統合できる形にそろえる。
  *
- * ★ glTF の COLOR_0 は正規化された u16 で来る。そのまま 0〜1 の値を書くと
- *   整数配列に切り捨てられて真っ黒になる。Float32 の3成分に作り直してから塗る。
+ * ★ 最適化（assets/optimize.mjs の量子化）を通すと、属性が**交互配置**になる。
+ *   そのとき `attr.array` はその属性だけの配列ではなく、位置も法線も混ざった
+ *   バッファ全体を指す。自前で添字を計算して読むと、まったく別の値を読む。
+ *   一度 交互配置を解いてから触る。
  */
-function recolor(geometry, palette) {
-  const src = geometry.getAttribute('color');
-  if (!src || src.itemSize < 4) return geometry;
-  const out = new Float32Array(src.count * 3);
-  const c = new THREE.Color();
-  const val = i => (src.normalized ? THREE.MathUtils.denormalize(src.array[i], src.array) : src.array[i]);
-  for (let i = 0; i < src.count; i++) {
-    const o = i * src.itemSize;
-    const hex = palette[Math.floor(val(o + 3) * PART_N)];
-    // Color.set() は sRGB → 作業色空間（線形）の変換を既に行う。
-    // ここで convertSRGBToLinear を重ねると2回かかって真っ黒になる
-    if (hex) c.set(hex);
-    else c.setRGB(val(o), val(o + 1), val(o + 2));
-    out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
-  }
-  geometry.setAttribute('color', new THREE.BufferAttribute(out, 3));
-  return geometry;
-}
+function prepare(geometry) {
+  const g = geometry;
+  // deinterleaveGeometry は引数のジオメトリを書き換える（戻り値は無い）
+  if (Object.values(g.attributes).some(a => a.isInterleavedBufferAttribute)) deinterleaveGeometry(g);
 
-/** 統合できるように型を揃える。ファイルが違うと skinIndex の型が違うことがある */
-function normalizeSkin(g) {
+  // 統合は属性の型が揃っていることを求める。量子化でファイルごとに型が変わりうる
   const idx = g.getAttribute('skinIndex');
   if (idx && !(idx.array instanceof Uint16Array)) {
-    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(Array.from(idx.array), idx.itemSize));
+    const a = new Uint16Array(idx.count * idx.itemSize);
+    for (let i = 0; i < idx.count; i++)
+      for (let c = 0; c < idx.itemSize; c++) a[i * idx.itemSize + c] = idx.getComponent(i, c);
+    g.setAttribute('skinIndex', new THREE.BufferAttribute(a, idx.itemSize));
   }
   const wt = g.getAttribute('skinWeight');
-  if (wt && !(wt.array instanceof Float32Array)) {
-    g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(Array.from(wt.array), wt.itemSize));
+  if (wt && (!(wt.array instanceof Float32Array) || wt.normalized)) {
+    const a = new Float32Array(wt.count * wt.itemSize);
+    for (let i = 0; i < wt.count; i++)
+      for (let c = 0; c < wt.itemSize; c++) a[i * wt.itemSize + c] = wt.getComponent(i, c);
+    g.setAttribute('skinWeight', new THREE.BufferAttribute(a, wt.itemSize));
   }
   for (const name of Object.keys(g.attributes)) {
     if (!['position', 'normal', 'color', 'skinIndex', 'skinWeight'].includes(name)) {
@@ -201,6 +227,30 @@ function normalizeSkin(g) {
 }
 
 /**
+ * COLOR_0 のアルファに入っている部位IDを見て RGB を塗り直す。
+ *
+ * ★ 生成時は u16、最適化後は u8 で入っている。どちらでも読めるように
+ *   getX/getW を使う（正規化の解除は three がやる）。
+ *   生の配列から自分で読むと、型が変わった瞬間に真っ黒になる。
+ */
+function recolor(geometry, palette) {
+  const src = geometry.getAttribute('color');
+  if (!src || src.itemSize < 4) return geometry;
+  const out = new Float32Array(src.count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < src.count; i++) {
+    const hex = palette[Math.floor(src.getW(i) * PART_N)];
+    // Color.set() は sRGB → 作業色空間（線形）の変換を既に行う。
+    // ここで convertSRGBToLinear を重ねると2回かかって真っ黒になる
+    if (hex) c.set(hex);
+    else c.setRGB(src.getX(i), src.getY(i), src.getZ(i));
+    out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(out, 3));
+  return geometry;
+}
+
+/**
  * 1人ぶんのアバターを作る。
  * @returns {{root:THREE.Object3D, mixer:THREE.AnimationMixer, play:(name:string)=>void,
  *            look:object, tris:number, dispose:()=>void}}
@@ -208,23 +258,19 @@ function normalizeSkin(g) {
 export function makeAvatar(packs, actor, gradientMap) {
   const look = actor.look ?? lookFor(actor);
 
-  // 骨は共通ファイルのものを人数ぶん複製する
-  const root = cloneSkinned(packs.rig);
-  let skeleton = null, bindMatrix = null, slot = null;
-  const spare = [];
-  root.traverse(o => {
-    if (!o.isSkinnedMesh) return;
-    if (!skeleton) { skeleton = o.skeleton; bindMatrix = o.bindMatrix; slot = o; }
-    spare.push(o);
-  });
-  const parent = slot.parent ?? root;
-  for (const m of spare) m.removeFromParent();
+  // 骨だけを人数ぶん複製し、Skeleton は1人1つだけ組む
+  const root = packs.rig.clone(true);
+  const byName = new Map();
+  root.traverse(o => { if (o.isBone) byName.set(o.name, o); });
+  const bones = packs.boneNames.map(n => byName.get(n));
+  if (bones.some(b => !b)) throw new Error('雛形に無い骨がある');
+  const skeleton = new THREE.Skeleton(bones, packs.boneInverses);
 
   const geos = [];
   for (const name of partNames(look)) {
     const src = packs.index.get(name);
     if (!src) { console.warn('パーツが無い:', name); continue; }
-    geos.push(normalizeSkin(recolor(src.geometry.clone(), look.palette)));
+    geos.push(recolor(prepare(src.geometry.clone()), look.palette));
   }
   const merged = mergeGeometries(geos, false);
   for (const g of geos) g.dispose();
@@ -233,12 +279,13 @@ export function makeAvatar(packs, actor, gradientMap) {
   const material = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap });
   const mesh = new THREE.SkinnedMesh(merged, material);
   mesh.name = 'avatar';
-  mesh.position.copy(slot.position);
-  mesh.quaternion.copy(slot.quaternion);
-  mesh.scale.copy(slot.scale);
+  mesh.position.copy(packs.slot.position);
+  mesh.quaternion.copy(packs.slot.quaternion);
+  mesh.scale.copy(packs.slot.scale);
   mesh.frustumCulled = false;            // 骨で動くので AABB が当てにならない
+  const parent = (packs.slot.name && root.getObjectByName(packs.slot.name)) || root;
   parent.add(mesh);
-  mesh.bind(skeleton, bindMatrix);
+  mesh.bind(skeleton, packs.bindMatrix);
 
   const mixer = new THREE.AnimationMixer(root);
   const actions = {};
@@ -258,6 +305,8 @@ export function makeAvatar(packs, actor, gradientMap) {
     tris: merged.index ? merged.index.count / 3 : merged.attributes.position.count / 3,
     dispose() {
       mixer.stopAllAction();
+      mixer.uncacheRoot(root);
+      skeleton.dispose();
       merged.dispose();
       material.dispose();
     },

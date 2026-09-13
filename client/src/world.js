@@ -43,6 +43,18 @@ export class ClientWorld {
 
   get me() { return this.actors.get(this.selfEntityId) ?? null; }
 
+  /**
+   * 入室し直したときに、前の状態を捨てる。
+   *
+   * ★ 再接続すると entityId が振り直される。捨てないと、切れる前の自分が
+   *   その場に立ったまま残る（誰も動かさないので永遠に消えない）。
+   */
+  reset(selfEntityId) {
+    this.actors.clear();
+    this.selfEntityId = selfEntityId;
+    this.tick = 0;
+  }
+
   /** roster（名前・色）は tick とは別チャネルで来る（§3.4） */
   applyRoster({ add = [], remove = [] }) {
     for (const e of add) {
