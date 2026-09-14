@@ -57,7 +57,8 @@ Unity の Test Runner は Editor が要り、Editor はライセンスが要る�
 | | 何を見る | ライセンス | 走らせ方 |
 | --- | --- | --- | --- |
 | `Tests.Headless` | 論理が正解表と一致するか | 不要 | `dotnet run --project unity/Tests.Headless` |
-| `Tests.EditModeCompile` | EditMode テストが**本物の Unity アセンブリでコンパイルできる**か | 不要 | `UNITY_DATA=<Editor/Data> dotnet build unity/Tests.EditModeCompile` |
+| `Tests.EditModeCompile` | **C# 全部**が本物の Unity アセンブリでコンパイルできるか | 不要 | `UNITY_DATA=<Editor/Data> dotnet build unity/Tests.EditModeCompile` |
+| `server/test/unity-parity.test.js` | 家具の種別がブラウザ版と揃っているか | 不要 | `cd server && npm test` |
 | Test Runner（EditMode） | 実際に走るか | **要る** | Editor → Test Runner → EditMode |
 
 > **真ん中が無いと何を見逃すか、実地で踏んだ。**
@@ -87,13 +88,29 @@ dotnet run --project unity/Tests.Headless
 | `Core/Grid.cs` | ✅ 移植・検証済 | 外周は常に塞ぐ。範囲外も通行不可 |
 | `Core/Movement.cs` | ✅ 移植・検証済 | 正解表の27件すべて一致 |
 | `Core/GoldenTable.cs` | ✅ | TSV の読み手。依存ライブラリ無し |
-| EditMode テストの**コンパイル** | ✅ 検証済 | Unity 6000.3.24f1 の本物のアセンブリに対して通る |
-| EditMode テストの**実行** | ⛔ **ライセンス待ち** | Editor は入れたが `No valid Unity Editor license found` で起動しない |
+| 部屋の造作（床・壁・天井の庇・小口・日なた） | ✅ コンパイル検証済 | `RoomBuilder.cs`。props.js の焼き込みをそのまま移植 |
+| 家具 **31種** | ✅ コンパイル検証済 | `Props.cs`。props.js と種別が一致することをテストで見張る |
+| カメラ（「部屋が収まる距離」） | ✅ コンパイル検証済 | `CameraRig.cs` |
+| フロア定義の読み込み | ✅ コンパイル検証済 | `FloorDef.cs`。StreamingAssets の floor.json を読む |
+| **絵が出ているかの確認** | ⛔ **ライセンス待ち** | Editor を起動できないので、**一度も描画していない** |
+| EditMode テストの**実行** | ⛔ **ライセンス待ち** | 同上 |
 | `Packages/manifest.json` | ⚠️ 半分 | バージョンの実在はレジストリで確認済。**解決の実行**は Editor が要る |
 | 通信（WebSocket・[09](../docs/design/09-protocol.md) のメッセージ） | ⛔ 未着手 | |
-| 部屋の造作（`client/src/props.js` 相当） | ⛔ 未着手 | |
 | アバター（glTF の読み込み・3クリップ） | ⛔ 未着手 | `client/assets/*.glb` をそのまま使える見込み |
-| カメラ（`render3d.js` の「部屋が収まる距離」） | ⛔ 未着手 | |
+
+> **⛔「絵が出ているかの確認」が本丸。**
+> コンパイルが通ることと、部屋が正しく見えることは別である。
+> 巻き順が裏返っていれば面が消えるし、頂点カラーが `NaN` になれば真っ黒になる
+> （ブラウザ版で実際に両方やった）。**ライセンスが入るまでは「動くはず」としか言えない。**
+
+## 使い方（Unity を開ける人向け）
+
+1. Unity Hub でこのフォルダを開く
+2. メニュー **ひだまり → 部屋を組む**（`Ctrl/Cmd + Shift + H`）
+3. 空のシーンに床・壁・天井・家具31種と、規則どおりのカメラが組まれる
+
+`.unity` のシーンファイルは置いていない。Unity の YAML を手で書くと壊れやすく、
+壊れたときに原因が分からないため、**メニューから組む**形にしてある。
 
 ### ライセンスについて
 

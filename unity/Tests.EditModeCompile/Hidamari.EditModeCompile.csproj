@@ -31,6 +31,8 @@
 
   <ItemGroup>
     <Compile Include="../Assets/Hidamari/Core/*.cs" />
+    <Compile Include="../Assets/Hidamari/Runtime/*.cs" />
+    <Compile Include="../Assets/Hidamari/Editor/*.cs" />
     <Compile Include="../Assets/Hidamari/Tests/EditMode/*.cs" />
   </ItemGroup>
 
@@ -43,6 +45,12 @@
     </Reference>
     <Reference Include="nunit.framework">
       <HintPath>$(UnityData)/Resources/PackageManager/BuiltInPackages/com.unity.ext.nunit/net40/unity-custom/nunit.framework.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEditor.CoreModule">
+      <HintPath>$(UnityData)/Managed/UnityEngine/UnityEditor.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(UnityData)/Managed/Newtonsoft.Json.dll</HintPath>
     </Reference>
   </ItemGroup>
 </Project>
