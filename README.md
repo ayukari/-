@@ -90,10 +90,12 @@ WebGL が無ければ 2D ビューに自動で切り替わる。
 
 | | 何か | 状態 |
 | --- | --- | --- |
-| [server/](./server/) | サーバ権威の検証ロジックと WebSocket ゲートウェイ | テスト89件（通し試験9件・アセット検査15件） |
+| [server/](./server/) | サーバ権威の検証ロジックと WebSocket ゲートウェイ | テスト95件（通し試験9件・アセット検査15件・移動の正解表4件） |
 | [client/](./client/) | 実物のクライアント。3D / 2D を同じ論理の上で切り替える | 歩く・座る・声をかける・ステータス |
 | [client/solo.html](./client/solo.html) | **ひとり用**（サーバ無し）。部屋のロジックをブラウザの中で動かす | [公開版](https://claude.ai/code/artifact/c38b8b34-7a92-43ad-b0ac-bbcfc16f2858) |
-| [assets/](./assets/) | アバターのパーツを生成・最適化する（Blender + glTF Transform） | **83パーツ・13万通り**・テクスチャ0・**694 KB** |
+| [assets/](./assets/) | アバターのパーツを生成・最適化する（Blender + glTF Transform） | **83パーツ・13万通り**・テクスチャ0・**1,046 KB** |
+| [unity/](./unity/) | Unity 版の表現レイヤー（着手したところ） | 論理の芯だけ。**部屋も人もまだ描かない**（[状態表](./unity/README.md)） |
+| [shared/golden/](./shared/golden/) | 移動の規則の正解表。JS と C# が両方これに一致することを見張る | 移動22件＋到達可能5件 |
 | [prototype/](./prototype/) | 単体で完結した操作プロトタイプ（L0〜L7） | ブラウザだけで動く |
 | [tools/](./tools/) | 接続診断ツール（情シス提出用） | 依存0・印刷でPDF |
 

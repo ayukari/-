@@ -184,16 +184,32 @@ interface SpaceRenderer {
 
 | | |
 | --- | --- |
-| 正解表 | `shared/golden/movement.json`（18ケース＋到達可能5ケース） |
+| 正解表 | `shared/golden/movement.tsv`（移動22件＋到達可能5件） |
 | 作る | `npm run dump:golden`（`server/src/dump-golden.js`。手で編集しない） |
 | JS 側の見張り | `server/test/golden.test.js` |
-| C# 側の見張り | Unity 版の EditMode テストが同じ表を読む |
+| C# 側の見張り（Unity 無し） | `dotnet run --project unity/Tests.Headless` |
+| C# 側の見張り（Editor） | Test Runner → EditMode → `MovementGoldenTests` |
 
 表には**壁ずり・外周・入力の丸め・`NaN`/`Infinity`・`dt` の頭打ち**を必ず含める。
 素直に歩くケースだけの表は、実装を書き写した人が同じ勘違いをすれば通ってしまう。
 
+> **薄い表は見張りにならない、を実地で踏んだ。**
+> 最初の表は「2軸目は**更新後の x** で判定する」という壁ずりの作法を固定できておらず、
+> C# 側で `IsBlocked(ox, ny)` を `IsBlocked(nx, ny)` と書き換えても通ってしまった。
+> 区別できる3件を足して、ようやく落ちるようになった。
+> **表を書いたら、わざと壊して落ちることを確かめる。**
+
+形式は JSON ではなく **TSV**。Unity の `JsonUtility` は数値と文字列が混ざる欄
+（`nan` を書く欄）を読めず、`System.Text.Json` は Unity に標準で入っていない。
+**表のために外部ライブラリを増やすのは本末転倒**なので、
+どちらの言語でも 15 行で読める行指向にしてある。
+
 > **表そのものが規則の定義ではない。** 定義は `core/movement.js` のままで、
 > 表はそこから機械的に出す。表を手で直して通すのは、規則を2つ持つのと同じこと。
+
+`Hidamari.Core` の asmdef には `"noEngineReferences": true` を入れてある。
+**論理レイヤーが表現レイヤーを知らない、という約束を Unity のコンパイラに守らせている。**
+おかげで同じ `.cs` が素の .NET でもコンパイルでき、Unity を開かずに表へ通せる。
 
 ### 4.6 3D 描画の予算（内蔵GPU で 30fps を守るための制約）
 

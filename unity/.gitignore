@@ -1,0 +1,36 @@
+# Unity が作るもの
+/Library/
+/Temp/
+/Obj/
+/Build/
+/Builds/
+/Logs/
+/UserSettings/
+/MemoryCaptures/
+/Recordings/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+sysinfo.txt
+*.apk
+*.aab
+*.unitypackage
+*.app
+crashlytics-build.properties
+
+# dotnet（Tests.Headless）
+bin/
+obj/
+
+# ただし Tests.Headless の csproj は残す（手で書いている）
+!Tests.Headless/*.csproj
