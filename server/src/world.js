@@ -28,9 +28,9 @@ function layout() {
   const blocked = [];
   let n = 0;
 
-  /* ★ 部屋の外周は壁。
-     以前は外周を blocked に入れていなかったので、壁に付くもの（窓・時計・
-     ホワイトボード）が何も無いところに浮いていた。歩ける範囲は 18×12。 */
+  /* 部屋の外周は壁。歩ける範囲は 18×12。
+     当たり判定は Grid が外周を必ず塞ぐので、これが無くても同じ。
+     ここで明示するのは、**下の席の向きの計算が Grid と同じ盤面を見る**ため。 */
   for (let x = 0; x < W; x++) { blocked.push([x, 0]); blocked.push([x, H - 1]); }
   for (let y = 1; y < H - 1; y++) { blocked.push([0, y]); blocked.push([W - 1, y]); }
 

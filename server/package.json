@@ -7,7 +7,8 @@
   "scripts": {
     "test": "node --test",
     "dev": "node src/main.js",
-    "dump:floor": "node src/dump-floor.js"
+    "dump:floor": "node src/dump-floor.js",
+    "dump:golden": "node src/dump-golden.js"
   },
   "engines": {
     "node": ">=20"
