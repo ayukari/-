@@ -187,7 +187,8 @@ interface SpaceRenderer {
 | 正解表 | `shared/golden/movement.tsv`（移動22件＋到達可能5件） |
 | 作る | `npm run dump:golden`（`server/src/dump-golden.js`。手で編集しない） |
 | JS 側の見張り | `server/test/golden.test.js` |
-| C# 側の見張り（Unity 無し） | `dotnet run --project unity/Tests.Headless` |
+| C# 側の見張り（ライセンス不要） | `dotnet run --project unity/Tests.Headless` |
+| C# 側のコンパイル検査（ライセンス不要） | `UNITY_DATA=… dotnet build unity/Tests.EditModeCompile` |
 | C# 側の見張り（Editor） | Test Runner → EditMode → `MovementGoldenTests` |
 
 表には**壁ずり・外周・入力の丸め・`NaN`/`Infinity`・`dt` の頭打ち**を必ず含める。
@@ -210,6 +211,13 @@ interface SpaceRenderer {
 `Hidamari.Core` の asmdef には `"noEngineReferences": true` を入れてある。
 **論理レイヤーが表現レイヤーを知らない、という約束を Unity のコンパイラに守らせている。**
 おかげで同じ `.cs` が素の .NET でもコンパイルでき、Unity を開かずに表へ通せる。
+
+> **ただし「素の .NET で通る」は「Unity で通る」ではない。**
+> `UnityEngine` にも `Grid`（タイルマップのコンポーネント）があるので、
+> テスト側で `using UnityEngine;` と並べた時点で `CS0104` になり、
+> EditMode テストは一度も通らない状態だった。素の .NET では `UnityEngine` を
+> 参照しないので出ない。Editor のアセンブリに当ててコンパイルするだけの検査
+> （`unity/Tests.EditModeCompile`、**ライセンス不要**）を挟んで初めて出た。
 
 ### 4.6 3D 描画の予算（内蔵GPU で 30fps を守るための制約）
 

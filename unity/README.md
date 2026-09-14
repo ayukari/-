@@ -16,9 +16,9 @@ Unity Hub → Add project from disk → このフォルダ（unity/）
 `ProjectSettings/ProjectVersion.txt` は `6000.0.0f1` と書いてある。
 手元の Unity 6 が別のパッチ版なら、Hub がアップグレードを勧めてくる。そのままでよい。
 
-> **`Packages/manifest.json` のバージョンは検証できていない。**
-> この作業環境に Unity が無いので、パッケージが解決できるかを確かめられなかった。
-> Package Manager が文句を言ったら、手元にあるバージョンに直してほしい。
+`Packages/manifest.json` に書いたバージョンは、Unity のレジストリに問い合わせて
+実在を確かめてある（`com.unity.test-framework` は 1.4.5、最新は 1.4.6）。
+`com.unity.modules.*` は組み込みなので常に解決する。
 
 ## 移動の規則が2つになる問題
 
@@ -49,6 +49,25 @@ Unity Hub → Add project from disk → このフォルダ（unity/）
 - 2軸目を更新前の x で判定する → 4件落ちる
 - X より先に Y を確定する → 2件落ちる
 
+## 3段構えで見張る
+
+Unity の Test Runner は Editor が要り、Editor はライセンスが要る。
+**ライセンス無しでも捕まえられるものは、ライセンス無しで捕まえる。**
+
+| | 何を見る | ライセンス | 走らせ方 |
+| --- | --- | --- | --- |
+| `Tests.Headless` | 論理が正解表と一致するか | 不要 | `dotnet run --project unity/Tests.Headless` |
+| `Tests.EditModeCompile` | EditMode テストが**本物の Unity アセンブリでコンパイルできる**か | 不要 | `UNITY_DATA=<Editor/Data> dotnet build unity/Tests.EditModeCompile` |
+| Test Runner（EditMode） | 実際に走るか | **要る** | Editor → Test Runner → EditMode |
+
+> **真ん中が無いと何を見逃すか、実地で踏んだ。**
+> `UnityEngine` にも `Grid`（タイルマップのコンポーネント）があるので、
+> `using UnityEngine;` と `using Hidamari.Core;` を並べた時点で `CS0104` になり、
+> EditMode テストは**一度も通らない状態**だった。
+> `Tests.Headless` は `UnityEngine` を参照しないので気づけず、
+> Test Runner はライセンスが無くて走らせられない。
+> **本物のアセンブリに当ててコンパイルするだけ**で出た。
+
 ## `Hidamari.Core` は UnityEngine を参照しない
 
 `Assets/Hidamari/Core/Hidamari.Core.asmdef` に `"noEngineReferences": true` が入っている。
@@ -68,16 +87,34 @@ dotnet run --project unity/Tests.Headless
 | `Core/Grid.cs` | ✅ 移植・検証済 | 外周は常に塞ぐ。範囲外も通行不可 |
 | `Core/Movement.cs` | ✅ 移植・検証済 | 正解表の27件すべて一致 |
 | `Core/GoldenTable.cs` | ✅ | TSV の読み手。依存ライブラリ無し |
-| EditMode テスト | ⚠️ **未実行** | 書いてあるが、この作業環境に Unity が無いので走らせていない |
-| `Packages/manifest.json` | ⚠️ **未検証** | パッケージのバージョンを確かめられていない |
+| EditMode テストの**コンパイル** | ✅ 検証済 | Unity 6000.3.24f1 の本物のアセンブリに対して通る |
+| EditMode テストの**実行** | ⛔ **ライセンス待ち** | Editor は入れたが `No valid Unity Editor license found` で起動しない |
+| `Packages/manifest.json` | ⚠️ 半分 | バージョンの実在はレジストリで確認済。**解決の実行**は Editor が要る |
 | 通信（WebSocket・[09](../docs/design/09-protocol.md) のメッセージ） | ⛔ 未着手 | |
 | 部屋の造作（`client/src/props.js` 相当） | ⛔ 未着手 | |
 | アバター（glTF の読み込み・3クリップ） | ⛔ 未着手 | `client/assets/*.glb` をそのまま使える見込み |
 | カメラ（`render3d.js` の「部屋が収まる距離」） | ⛔ 未着手 | |
 
-> **⚠️ の2つは、誰かが一度 Unity で開けば分かる。**
-> この環境には Unity が無く、私には確かめようがない。
-> 「動くはず」と書かずに「未実行」と書いてあるのはそのため。
+### ライセンスについて
+
+Unity 6000.3.24f1 の Linux Editor は入れてある（`/opt/unity/Editor/Unity`）が、
+**Unity は無ライセンスでは起動しない**（batchmode でも同じ）。
+
+```
+[Licensing::Client] Error: Code 404 (Found 0 entitlement groups and 0 free entitlements)
+No valid Unity Editor license found. Please activate your license.
+```
+
+アクティベーション要求ファイル（`.alf`）は作ってある。手順は3つ。
+
+1. `Unity_v6000.3.24f1.alf` を https://license.unity3d.com/manual に上げる（Unity アカウントでサインイン）
+2. 返ってきた `.ulf` を受け取る
+3. `Unity -batchmode -nographics -quit -manualLicenseFile <その .ulf>`
+
+**パスワードやシリアルは要らないし、渡さないでほしい。** 1 と 2 はブラウザでの作業で、
+こちらが要るのは `.ulf` ファイルだけ。`.ulf` はアカウントに紐づくので、
+渡すかどうかは持ち主が決めること。渡さない場合は、手元の Unity で
+Test Runner を開いてもらえれば同じことが確かめられる。
 
 ## まだ決めていないこと — WebGL か、配布アプリか
 

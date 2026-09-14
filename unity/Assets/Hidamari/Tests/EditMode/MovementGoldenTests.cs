@@ -10,6 +10,10 @@ using System.IO;
 using NUnit.Framework;
 using UnityEngine;
 using Hidamari.Core;
+// ★ UnityEngine にも Grid がある（タイルマップの Grid コンポーネント）。
+//   `using UnityEngine;` と併せると CS0104 で**コンパイルが通らない**。
+//   論理側の Grid だと明示する。名前は grid.js と揃えたいので変えない。
+using Grid = Hidamari.Core.Grid;
 
 namespace Hidamari.Tests
 {
