@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Unity を開かずに、C# 版の移動が正解表と一致するかを確かめる。
+
+       ★ Unity のプロジェクトとは別物ではない。同じ .cs を参照している。
+         Assets/Hidamari/Core/*.cs は UnityEngine を参照しないので、
+         素の .NET でもそのままコンパイルできる。写しが2つあるわけではない。
+
+         実行のしかたは unity/README.md を見ること（XML コメントに連続ハイフンは書けない）
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>9.0</LangVersion>
+    <RootNamespace>Hidamari.Headless</RootNamespace>
+    <AssemblyName>Hidamari.Headless</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../Assets/Hidamari/Core/*.cs" />
+  </ItemGroup>
+</Project>

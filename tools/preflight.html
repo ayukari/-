@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ひだまり 接続診断</title>
+<!--
+  接続診断ツール（docs/design/03-features.md M-19 / 02 壁5）
+
+  外部依存ゼロ。CDN もフォント配信も使わない。
+  docs/security-review-pack/01-endpoints.md §4 で決めた方針に、この道具自身も従う。
+
+  使い方:
+    自社の Web サーバに置いて、社内の端末からブラウザで開く。
+    接続先は下の CONFIG か、URL のクエリで差し替える。
+      ?ws=wss://rt.example/probe&stun=stun:stun.example:3478
+      &turn=turns:turn.example:443?transport=tcp&turnuser=xxx&turnpass=yyy
+      &dl=/probe-2mb.bin
+
+  注意:
+    - file:// で開くと WebSocket と一部の計測ができない。必ず https:// で配信する
+    - Claude のアーティファクトとして公開しても動かない（CSP が外部接続を塞ぐ）
+-->
+<style>
+:root{
+  --ground:#E9ECF0; --surface:#fff; --surface-2:#F3F5F8; --line:#D3D9E0;
+  --ink:#191E25; --ink-2:#4A5563; --muted:#78838F;
+  --ok:#3F7A52; --ok-bg:#E4F0E8; --warn:#8A5A22; --warn-bg:#F7EAD6;
+  --ng:#973F39; --ng-bg:#F7E3E1; --idle-bg:#EDF0F3;
+  --accent:#2F5D74;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ground:#13171C; --surface:#1B2128; --surface-2:#222932; --line:#303945;
+    --ink:#E7EBF0; --ink-2:#AFBAC6; --muted:#7C8794;
+    --ok:#84B08F; --ok-bg:#1C2A21; --warn:#D19A63; --warn-bg:#2E2417;
+    --ng:#C9807A; --ng-bg:#2E1C1B; --idle-bg:#232A33;
+    --accent:#8FBBD1;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif;
+  font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:760px;margin:0 auto;padding:36px 20px 72px}
+h1{font-size:23px;margin:0 0 6px;letter-spacing:.01em}
+.sub{color:var(--ink-2);margin:0 0 22px;font-size:14px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.row{display:grid;grid-template-columns:104px minmax(0,1fr) auto;gap:14px;align-items:start;
+  padding:14px 16px;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.badge{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;
+  text-align:center;background:var(--idle-bg);color:var(--muted)}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.ng{background:var(--ng-bg);color:var(--ng)}
+.badge.run{background:var(--idle-bg);color:var(--ink-2)}
+.row h3{margin:0;font-size:14.5px;font-weight:600}
+.row p{margin:3px 0 0;font-size:12.5px;color:var(--muted);line-height:1.6}
+.row .val{font-size:13px;color:var(--ink-2);white-space:nowrap;padding-top:1px}
+
+.verdict{margin:20px 0 0;padding:16px 18px;border-radius:12px;border:1px solid var(--line);background:var(--surface)}
+.verdict.ok{border-color:var(--ok);background:var(--ok-bg)}
+.verdict.warn{border-color:var(--warn);background:var(--warn-bg)}
+.verdict.ng{border-color:var(--ng);background:var(--ng-bg)}
+.verdict h2{margin:0 0 6px;font-size:17px}
+.verdict p{margin:0;font-size:13.5px;line-height:1.75;color:var(--ink-2)}
+.verdict.ok p,.verdict.warn p,.verdict.ng p{color:var(--ink)}
+
+.bar{display:flex;gap:9px;flex-wrap:wrap;margin:22px 0 0;align-items:center}
+button{
+  font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--ink);
+  border-radius:9px;padding:9px 17px;cursor:pointer
+}
+button.primary{background:var(--accent);border-color:transparent;color:#fff;font-weight:600}
+button:disabled{opacity:.5;cursor:not-allowed}
+button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+details{margin-top:22px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+summary{padding:12px 16px;cursor:pointer;font-size:13.5px;font-weight:600}
+.det{padding:0 16px 16px}
+label{display:block;font-size:12px;color:var(--ink-2);margin:10px 0 4px;font-weight:600}
+input{width:100%;padding:8px 11px;border:1px solid var(--line);border-radius:8px;
+  background:var(--surface-2);color:var(--ink);font:13px/1.5 ui-monospace,Menlo,monospace}
+pre{background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:13px;
+  overflow:auto;font-size:12px;line-height:1.65;margin:12px 0 0;white-space:pre-wrap;word-break:break-all}
+.note{font-size:12.5px;color:var(--muted);margin-top:18px;line-height:1.7}
+.foot{margin-top:26px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+
+@media print{
+  body{background:#fff;color:#000}
+  .bar,details,button{display:none!important}
+  .panel,.verdict{border:1px solid #999;break-inside:avoid}
+  .wrap{max-width:none;padding:0}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ひだまり 接続診断</h1>
+  <p class="sub">この端末とネットワークで利用できるかを判定します。データは送信されません。結果はこの画面にのみ表示されます。</p>
+
+  <div class="panel" id="rows"></div>
+
+  <div class="verdict" id="verdict">
+    <h2 id="vTitle">診断していません</h2>
+    <p id="vBody">「診断を開始」を押してください。20〜40秒かかります。</p>
+  </div>
+
+  <div class="bar">
+    <button class="primary" id="run">診断を開始</button>
+    <button id="print" disabled>レポートを印刷 / PDF 保存</button>
+    <button id="copy" disabled>結果をテキストでコピー</button>
+  </div>
+
+  <details>
+    <summary>接続先の設定</summary>
+    <div class="det">
+      <label for="cWs">WebSocket（リアルタイム同期）</label>
+      <input id="cWs" spellcheck="false">
+      <label for="cStun">STUN（UDP 到達性の確認用）</label>
+      <input id="cStun" spellcheck="false">
+      <label for="cTurn">TURN（TCP 443 フォールバック）</label>
+      <input id="cTurn" spellcheck="false">
+      <label for="cUser">TURN ユーザ名</label>
+      <input id="cUser" spellcheck="false">
+      <label for="cPass">TURN 資格情報</label>
+      <input id="cPass" spellcheck="false">
+      <label for="cDl">帯域測定に使うファイル（同一オリジン推奨）</label>
+      <input id="cDl" spellcheck="false">
+      <p class="note">URL のクエリでも渡せます: <span class="mono">?ws=...&amp;stun=...&amp;turn=...&amp;turnuser=...&amp;turnpass=...&amp;dl=...</span></p>
+    </div>
+  </details>
+
+  <details>
+    <summary>情シス向け: この診断が確認していること</summary>
+    <div class="det">
+      <p class="note" style="margin-top:12px">
+        <b>ブラウザ</b> … WebRTC と WebSocket に対応しているか。<br>
+        <b>HTTPS</b> … 安全なコンテキストで配信されているか（WebRTC の前提条件）。<br>
+        <b>WebSocket</b> … 443/TLS の長時間接続が Proxy や SSL インスペクションで切られないか。<br>
+        <b>UDP</b> … STUN で反射アドレス（srflx）が取れるか。取れなければ UDP は塞がれている。<br>
+        <b>TURN/TCP 443</b> … UDP が塞がれていても中継（relay）候補が取れるか。<b>ここが通れば通話は成立する。</b><br>
+        <b>往復遅延</b> … WebSocket のエコー往復時間。<br>
+        <b>帯域</b> … 既知サイズのファイルの取得時間からの概算。
+      </p>
+      <p class="note">
+        いずれの項目も、送信するのは接続の試行だけです。端末の情報・入力・音声は一切扱いません。
+        マイクやカメラの許可も求めません。
+      </p>
+    </div>
+  </details>
+
+  <p class="foot">
+    ひだまり 接続診断 v1 ・ 外部 CDN やフォント配信を使用しない単体 HTML ・
+    <span class="mono" id="ua"></span>
+  </p>
+</div>
+
+<script>
+"use strict";
+
+/* ===== 設定 ============================================================= */
+const Q = new URLSearchParams(location.search);
+const CONFIG = {
+  ws:       Q.get('ws')       || 'wss://rt.hidamari.example/probe',
+  stun:     Q.get('stun')     || 'stun:stun.hidamari.example:3478',
+  turn:     Q.get('turn')     || 'turns:turn.hidamari.example:443?transport=tcp',
+  turnUser: Q.get('turnuser') || '',
+  turnPass: Q.get('turnpass') || '',
+  dl:       Q.get('dl')       || '',
+};
+
+/* ===== 検査の定義 ======================================================= */
+const CHECKS = [
+  { id:'browser', name:'ブラウザ',        desc:'WebRTC と WebSocket への対応' },
+  { id:'https',   name:'HTTPS',           desc:'安全なコンテキストで配信されているか' },
+  { id:'ws',      name:'WebSocket',       desc:'443/TLS の接続が維持されるか' },
+  { id:'udp',     name:'UDP',             desc:'STUN で反射アドレスが取れるか（通れば低遅延）' },
+  { id:'turn',    name:'TURN / TCP 443',  desc:'UDP が塞がれていても中継できるか' },
+  { id:'rtt',     name:'往復遅延',        desc:'WebSocket のエコー往復時間' },
+  { id:'bw',      name:'推定帯域',        desc:'既知サイズのファイルの取得時間から概算' },
+];
+
+const state = {};
+CHECKS.forEach(c => state[c.id] = { status:'idle', value:'—', detail:'' });
+
+/* ===== 描画 ============================================================= */
+const $ = id => document.getElementById(id);
+const BADGE = { idle:['—','' ], run:['測定中','run'], ok:['OK','ok'], warn:['注意','warn'], ng:['不可','ng'], skip:['未測定','']};
+
+function render(){
+  $('rows').innerHTML = CHECKS.map(c => {
+    const s = state[c.id], [label, cls] = BADGE[s.status] || BADGE.idle;
+    return `<div class="row">
+      <span class="badge ${cls}">${label}</span>
+      <div><h3>${c.name}</h3><p>${s.detail || c.desc}</p></div>
+      <div class="val mono">${s.value}</div>
+    </div>`;
+  }).join('');
+}
+function set(id, status, value, detail){
+  state[id] = { status, value: value ?? state[id].value, detail: detail ?? '' };
+  render();
+}
+
+/* ===== 個別の検査 ======================================================= */
+
+function checkBrowser(){
+  const hasRTC = typeof RTCPeerConnection === 'function';
+  const hasWS  = typeof WebSocket === 'function';
+  if (hasRTC && hasWS) set('browser','ok','対応','WebRTC / WebSocket ともに利用できます');
+  else set('browser','ng','非対応',
+    `${hasRTC?'':'WebRTC '}${hasWS?'':'WebSocket '}が利用できません。対応ブラウザで開いてください`);
+  return hasRTC && hasWS;
+}
+
+function checkHttps(){
+  if (location.protocol === 'file:'){
+    // Chromium では file:// も安全なコンテキスト扱いだが、
+    // 同一オリジンの取得ができず、実環境の再現にならない
+    set('https','warn','file://',
+      'ローカルファイルとして開かれています。WebRTC は動きますが帯域測定ができず、実際の配信環境とも異なります。'
+      + '自社の Web サーバに置いて https:// で開いてください');
+    return true;
+  }
+  if (window.isSecureContext){
+    set('https','ok','安全', location.protocol === 'https:'
+      ? 'HTTPS で配信されています' : 'localhost として安全なコンテキストで動作しています');
+    return true;
+  }
+  set('https','ng','不可','http:// では WebRTC が動きません。HTTPS で配信してください');
+  return false;
+}
+
+function openSocket(url, timeoutMs){
+  return new Promise(resolve => {
+    let ws, done = false;
+    const finish = r => { if (done) return; done = true; try{ ws && ws.close(); }catch(_){} resolve(r); };
+    const t = setTimeout(()=> finish({ ok:false, reason:'timeout' }), timeoutMs);
+    try { ws = new WebSocket(url); } catch(e){ clearTimeout(t); return finish({ ok:false, reason:'invalid' }); }
+    ws.onopen  = ()=> { clearTimeout(t); done = true; resolve({ ok:true, ws }); };
+    ws.onerror = ()=> { clearTimeout(t); finish({ ok:false, reason:'error' }); };
+    ws.onclose = e => { clearTimeout(t); finish({ ok:false, reason:'closed:'+e.code }); };
+  });
+}
+
+async function checkWs(){
+  set('ws','run','…');
+  const t0 = performance.now();
+  const r = await openSocket(CONFIG.ws, 8000);
+  if (!r.ok){
+    const why = r.reason === 'timeout'
+      ? '8秒以内に接続できませんでした。Proxy か Firewall に塞がれている可能性があります'
+      : '接続できませんでした。接続先の設定と、443/TLS の許可を確認してください';
+    set('ws','ng','到達せず', why);
+    return null;
+  }
+  const ms = Math.round(performance.now() - t0);
+  // 3秒維持できるかを見る（SSL インスペクションは確立直後に切ることがある）
+  const stable = await new Promise(res => {
+    const timer = setTimeout(()=> res(true), 3000);
+    r.ws.onclose = ()=> { clearTimeout(timer); res(false); };
+  });
+  if (!stable){ set('ws','warn','切断される',
+    '接続はできましたが3秒以内に切断されました。SSL インスペクションが長時間接続を切っている可能性があります');
+    return null; }
+  set('ws','ok', ms + ' ms', '接続が確立し、維持されました');
+  return r.ws;
+}
+
+/** ICE 候補を集めて、srflx / relay が取れるかを見る */
+function gatherIce(iceServers, policy, timeoutMs){
+  return new Promise(resolve => {
+    const found = { host:false, srflx:false, relay:false };
+    let pc, done = false, err = null;
+    const finish = ()=> { if (done) return; done = true; try{ pc && pc.close(); }catch(_){} resolve({ found, err }); };
+    const t = setTimeout(finish, timeoutMs);
+    try {
+      pc = new RTCPeerConnection({ iceServers, iceTransportPolicy: policy });
+    } catch(e){ clearTimeout(t); err = String(e && e.message || e); return finish(); }
+    pc.onicecandidate = e => {
+      if (!e.candidate){ clearTimeout(t); return finish(); }   // 収集完了
+      const c = e.candidate.candidate || '';
+      if (/ typ host/.test(c))  found.host  = true;
+      if (/ typ srflx/.test(c)) found.srflx = true;
+      if (/ typ relay/.test(c)){ found.relay = true; clearTimeout(t); finish(); }
+    };
+    pc.onicecandidateerror = ev => { if (!err) err = 'ICE ' + (ev.errorCode || '') + ' ' + (ev.errorText || ''); };
+    try {
+      pc.createDataChannel('probe');
+      pc.createOffer().then(o => pc.setLocalDescription(o)).catch(e => { err = String(e); clearTimeout(t); finish(); });
+    } catch(e){ err = String(e); clearTimeout(t); finish(); }
+  });
+}
+
+async function checkUdp(){
+  set('udp','run','…');
+  const r = await gatherIce([{ urls: CONFIG.stun }], 'all', 9000);
+  if (r.found.srflx){ set('udp','ok','到達','UDP が通ります。低遅延の経路が使えます'); return true; }
+  if (r.found.host){ set('udp','warn','塞がれている',
+    'STUN の反射アドレスが取れませんでした。UDP はブロックされている可能性が高いです（TURN で代替できます）'); return false; }
+  set('udp','warn','判定できず',
+    'ICE 候補が取れませんでした。STUN の設定を確認してください' + (r.err ? '（' + r.err + '）' : ''));
+  return false;
+}
+
+async function checkTurn(){
+  if (!CONFIG.turnUser || !CONFIG.turnPass){
+    set('turn','skip','未測定','TURN の資格情報が設定されていないため測定していません');
+    return null;
+  }
+  set('turn','run','…');
+  const r = await gatherIce(
+    [{ urls: CONFIG.turn, username: CONFIG.turnUser, credential: CONFIG.turnPass }],
+    'relay', 12000);
+  if (r.found.relay){ set('turn','ok','到達','TCP 443 の中継が使えます。UDP が塞がれていても通話は成立します'); return true; }
+  set('turn','ng','到達せず',
+    'relay 候補が取れませんでした。TURN の設定、または 443/TCP の許可を確認してください' + (r.err ? '（' + r.err + '）' : ''));
+  return false;
+}
+
+async function checkRtt(ws){
+  if (!ws || ws.readyState !== 1){ set('rtt','skip','未測定','WebSocket が確立できなかったため測定していません'); return null; }
+  set('rtt','run','…');
+  const samples = [];
+  for (let i = 0; i < 5; i++){
+    const t0 = performance.now();
+    const got = await new Promise(res => {
+      const timer = setTimeout(()=> res(false), 3000);
+      ws.onmessage = ()=> { clearTimeout(timer); res(true); };
+      try { ws.send(JSON.stringify({ t:'ping', n:i })); } catch(_){ clearTimeout(timer); res(false); }
+    });
+    if (!got){ set('rtt','skip','未測定','エコー応答がありませんでした（診断用エンドポイントが ping に応答する必要があります）'); return null; }
+    samples.push(performance.now() - t0);
+    await new Promise(r => setTimeout(r, 120));
+  }
+  samples.sort((a,b)=>a-b);
+  const med = Math.round(samples[2]);
+  if (med < 80)  set('rtt','ok',   med+' ms','良好です');
+  else if (med < 200) set('rtt','warn', med+' ms','やや高めです。会話の間が気になる場合があります');
+  else set('rtt','ng', med+' ms','高すぎます。VPN の経路や集約構成を確認してください');
+  return med;
+}
+
+async function checkBandwidth(){
+  if (!CONFIG.dl){ set('bw','skip','未測定','測定用ファイルの URL が設定されていません'); return null; }
+  set('bw','run','…');
+  try {
+    const url = CONFIG.dl + (CONFIG.dl.includes('?') ? '&' : '?') + 'cb=' + Date.now();
+    const t0 = performance.now();
+    const res = await fetch(url, { cache:'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
+    const sec = (performance.now() - t0) / 1000;
+    const mbps = (buf.byteLength * 8) / sec / 1e6;
+    const txt = mbps.toFixed(1) + ' Mbps';
+    if (mbps >= 5)      set('bw','ok',   txt, '十分です（100人・同時通話20%で約 1.6 Mbps が目安）');
+    else if (mbps >= 2) set('bw','warn', txt, '音声は問題ありませんが、ビデオは厳しい可能性があります');
+    else                set('bw','ng',   txt, '低帯域モードやテキストモードでの利用を推奨します');
+    return mbps;
+  } catch(e){
+    set('bw','skip','未測定','取得できませんでした（' + (e && e.message) + '）');
+    return null;
+  }
+}
+
+/* ===== 総合判定 ========================================================= */
+function verdict(){
+  const s = id => state[id].status;
+  const el = $('verdict'), title = $('vTitle'), body = $('vBody');
+  el.className = 'verdict';
+
+  if (s('browser') === 'ng' || s('https') === 'ng'){
+    el.classList.add('ng'); title.textContent = '利用できません';
+    body.textContent = state[s('browser')==='ng'?'browser':'https'].detail;
+    return '利用不可';
+  }
+  const mediaOk = s('udp') === 'ok' || s('turn') === 'ok';
+  const wsOk = s('ws') === 'ok';
+
+  if (wsOk && mediaOk){
+    el.classList.add('ok'); title.textContent = '利用できます';
+    body.textContent = s('udp') === 'ok'
+      ? 'UDP が通るため、低遅延の経路で通話できます。'
+      : 'UDP は塞がれていますが、TCP 443 の中継（TURN）を経由して通話できます。遅延はやや増えます。';
+    return '利用可能';
+  }
+  if (wsOk && !mediaOk){
+    el.classList.add('warn'); title.textContent = '通話以外は利用できます';
+    body.textContent = 'UDP も TURN も到達しませんでした。空間・今週のカード・チャットは使えますが、'
+      + '音声通話は成立しません（テキストモード）。443/TCP の TURN を許可すると通話も使えるようになります。';
+    return '部分的に利用可能（通話不可）';
+  }
+  el.classList.add('ng'); title.textContent = '利用できません';
+  body.textContent = 'WebSocket が到達しませんでした。443/TLS の接続が許可されているか、'
+    + '接続先の設定が正しいかを確認してください。';
+  return '利用不可';
+}
+
+/* ===== レポート ========================================================= */
+let reportText = '';
+function buildReport(v){
+  const lines = [
+    'ひだまり 接続診断レポート',
+    '日時: ' + new Date().toLocaleString('ja-JP'),
+    'ページ: ' + location.origin,
+    'UA: ' + navigator.userAgent,
+    '',
+    '総合判定: ' + v,
+    '',
+    '--- 項目 ---',
+  ];
+  CHECKS.forEach(c => {
+    const s = state[c.id], label = (BADGE[s.status] || BADGE.idle)[0];
+    lines.push(`${c.name}: ${label}  ${s.value}`);
+    if (s.detail) lines.push('  ' + s.detail);
+  });
+  lines.push('', '--- 接続先 ---',
+    'WebSocket: ' + CONFIG.ws,
+    'STUN: ' + CONFIG.stun,
+    'TURN: ' + CONFIG.turn,
+    '帯域測定: ' + (CONFIG.dl || '(未設定)'),
+    '', 'この診断は接続の試行のみを行い、端末情報・音声・入力を送信しません。');
+  return lines.join('\n');
+}
+
+/* ===== 実行 ============================================================= */
+async function run(){
+  $('run').disabled = true; $('print').disabled = true; $('copy').disabled = true;
+  CHECKS.forEach(c => state[c.id] = { status:'idle', value:'—', detail:'' });
+  render();
+
+  const okB = checkBrowser();
+  const okH = checkHttps();
+  let ws = null;
+  if (okB && okH){
+    ws = await checkWs();
+    await checkUdp();
+    await checkTurn();
+    await checkRtt(ws);
+    await checkBandwidth();
+  } else {
+    ['ws','udp','turn','rtt','bw'].forEach(id =>
+      set(id,'skip','未測定','前提条件を満たしていないため測定していません'));
+  }
+  try { ws && ws.close(); } catch(_){}
+
+  const v = verdict();
+  reportText = buildReport(v);
+  $('run').disabled = false; $('print').disabled = false; $('copy').disabled = false;
+  $('run').textContent = 'もう一度診断する';
+}
+
+/* ===== 配線 ============================================================= */
+const FIELDS = { cWs:'ws', cStun:'stun', cTurn:'turn', cUser:'turnUser', cPass:'turnPass', cDl:'dl' };
+Object.entries(FIELDS).forEach(([id, key]) => {
+  const el = $(id); el.value = CONFIG[key];
+  el.oninput = ()=> { CONFIG[key] = el.value.trim(); };
+});
+$('ua').textContent = navigator.userAgent;
+$('run').onclick = run;
+$('print').onclick = ()=> window.print();
+$('copy').onclick = async ()=> {
+  try { await navigator.clipboard.writeText(reportText); $('copy').textContent = 'コピーしました'; }
+  catch(_){ $('copy').textContent = 'コピーできませんでした'; }
+  setTimeout(()=> $('copy').textContent = '結果をテキストでコピー', 2000);
+};
+render();
+</script>
+</body>
+</html>

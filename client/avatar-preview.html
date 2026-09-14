@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>アバター確認</title>
+<style>
+:root{--bg:#E9ECF0;--ink:#191E25;--muted:#78838F;--line:#D3D9E0;--surface:#fff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#13171C;--ink:#E7EBF0;--muted:#7C8794;--line:#303945;--surface:#1B2128;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+#stage{position:fixed;inset:0}
+#stage canvas{display:block;width:100%;height:100%}
+.bar{position:fixed;left:12px;bottom:12px;right:12px;z-index:5;background:var(--surface);
+  border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;gap:7px;
+  align-items:center;flex-wrap:wrap;font-size:13px}
+button,select{font:inherit;font-size:12.5px;padding:6px 10px;border:1px solid var(--line);
+  border-radius:8px;background:var(--bg);color:var(--ink);cursor:pointer}
+button.on{background:var(--ink);color:var(--bg);border-color:transparent}
+.info{position:fixed;top:12px;left:12px;z-index:5;background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:10px 12px;font-size:11.5px;color:var(--muted);line-height:1.9;min-width:210px}
+.info b{color:var(--ink);font-weight:500;float:right}
+.over{color:#B25F6A}
+.sep{width:1px;height:22px;background:var(--line);margin:0 3px}
+a{color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div class="info" id="info">読み込み中…</div>
+<div class="bar">
+  <span id="clips"></span><span class="sep"></span>
+  <select id="body"></select><select id="hair"></select><select id="top"></select>
+  <select id="bottom"></select><select id="shoe"></select><select id="acc"></select>
+  <span class="sep"></span>
+  <button id="spin" class="on">回す</button>
+  <button id="reroll">ランダム</button>
+  <a href="/avatar-gallery.html">100体を並べて見る →</a>
+</div>
+<script type="importmap">
+{ "imports": { "three": "/vendor/three.module.js", "three/": "/vendor/", "three/addons/": "/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { loadAvatars, makeAvatar, toonGradient, lookFor, VARIETY } from '/src/avatar.js';
+import { blobGeometry } from '/src/render3d.js';
+
+const el = document.getElementById('stage');
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+el.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(dark ? 0x13171c : 0xe9ecf0);
+scene.add(new THREE.HemisphereLight(0xffffff, dark ? 0x202830 : 0xc9d2dc, 1.45));
+const sun = new THREE.DirectionalLight(0xfff4e2, 0.75); sun.position.set(3, 6, 4); scene.add(sun);
+const floor = new THREE.Mesh(new THREE.CircleGeometry(1.4, 40),
+  new THREE.MeshLambertMaterial({ color: dark ? 0x4a4237 : 0xd8cdbc }));
+floor.rotation.x = -Math.PI / 2; scene.add(floor);
+// 足元の影。ゲーム画面と同じものを使う
+const blob = new THREE.Mesh(blobGeometry(), new THREE.MeshBasicMaterial({
+  vertexColors: true, transparent: true, depthWrite: false }));
+blob.scale.set(0.40, 1, 0.33); blob.position.y = 0.012; blob.renderOrder = 1;
+scene.add(blob);
+
+const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 60);
+let yaw = 0.35, pitch = 0.22, dist = 3.4, spin = true, look_ = 0.85;
+const gradient = toonGradient();
+
+const packs = await loadAvatars();
+let rig = null, seed = 1, look = lookFor({ userId: 'preview1' });
+const clipNames = packs.clips.map(c => c.name);
+let clip = clipNames.includes('idle') ? 'idle' : clipNames[0];
+
+const NAMES = {
+  body: ['細め', 'ふつう', '丸め'],
+  hair: ['ショート', '分け目', 'ボブ', 'ロング', 'ポニー', 'ツイン', 'お団子', '三つ編み',
+         'ツンツン', 'ウェーブ', '刈り上げ', 'くるくる', 'ハーフ', 'サイド'],
+  top: ['Tシャツ', '長袖', 'タンク', 'パーカー', 'シャツ', 'セーター', 'カーデ', 'ワンピ', 'ジャケット', 'ベスト'],
+  bottom: ['パンツ', 'ショート', 'クロップ', 'ワイド', 'レギンス', 'スカート', 'ロングスカート', 'カーゴ'],
+  shoe: ['スニーカー', 'ローファー', 'ブーツ', 'サンダル', 'ハイカット'],
+  acc: ['小物なし', 'めがね', 'ヘッドホン', 'キャップ', 'ニット帽', 'リボン', 'マフラー', 'ヘアピン'],
+};
+for (const [key, labels] of Object.entries(NAMES)) {
+  const sel = document.getElementById(key);
+  sel.innerHTML = labels.map((l, i) => `<option value="${i}">${l}</option>`).join('');
+  sel.onchange = () => { look = { ...look, [key]: +sel.value }; build(); };
+}
+document.getElementById('clips').innerHTML = clipNames
+  .map(n => `<button data-clip="${n}">${n}</button>`).join(' ');
+document.querySelectorAll('[data-clip]').forEach(b => b.onclick = () => {
+  clip = b.dataset.clip; rig.play(clip); mark();
+});
+const mark = () => document.querySelectorAll('[data-clip]').forEach(
+  b => b.classList.toggle('on', b.dataset.clip === clip));
+
+function build() {
+  if (rig) { scene.remove(rig.root); rig.dispose(); }
+  rig = makeAvatar(packs, { look }, gradient);
+  scene.add(rig.root);
+  rig.play(clip);
+  mark();
+  for (const key of Object.keys(NAMES)) document.getElementById(key).value = String(look[key]);
+  const over = rig.tris > 3700;   // server/test/assets.test.js と同じ値
+  document.getElementById('info').innerHTML = `
+    <div>三角形 <b class="${over ? 'over' : ''}">${rig.tris.toLocaleString()}</b></div>
+    <div>上限（10 §4） <b>3,700</b></div>
+    <div>ドローコール／人 <b>1</b></div>
+    <div>ボーン <b>18</b></div>
+    <div>テクスチャ <b>0</b></div>
+    <div>形の組合せ <b>${VARIETY.shapes.toLocaleString()}</b></div>
+    <div>配色の組合せ <b>${VARIETY.colors.toLocaleString()}</b></div>`;
+}
+
+document.getElementById('reroll').onclick = () => { look = lookFor({ userId: 'preview' + (++seed) }); build(); };
+document.getElementById('spin').onclick = e => { spin = !spin; e.target.classList.toggle('on', spin); };
+
+let drag = null;
+renderer.domElement.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY }; spin = false;
+  document.getElementById('spin').classList.remove('on');
+});
+addEventListener('pointerup', () => drag = null);
+addEventListener('pointermove', e => {
+  if (!drag) return;
+  yaw -= (e.clientX - drag.x) * 0.01;
+  pitch = Math.max(-0.2, Math.min(1.1, pitch + (e.clientY - drag.y) * 0.006));
+  drag = { x: e.clientX, y: e.clientY };
+});
+addEventListener('wheel', e => { dist = Math.max(1.2, Math.min(8, dist + e.deltaY * 0.002)); }, { passive: true });
+
+function resize() {
+  renderer.setSize(el.clientWidth, el.clientHeight, false);
+  camera.aspect = el.clientWidth / Math.max(1, el.clientHeight);
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+build();
+
+let last = performance.now();
+renderer.setAnimationLoop(now => {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (spin) yaw += dt * 0.55;
+  rig.mixer.update(dt);
+  camera.position.set(Math.sin(yaw) * Math.cos(pitch) * dist, look_ + Math.sin(pitch) * dist,
+                      Math.cos(yaw) * Math.cos(pitch) * dist);
+  camera.lookAt(0, look_, 0);
+  renderer.render(scene, camera);
+});
+globalThis.__preview = {
+  set: (partial, c) => { look = { ...look, ...partial }; if (c) clip = c; build(); rig.play(clip); },
+  seed: n => { look = lookFor({ userId: 'preview' + n }); build(); },
+  spin: v => { spin = v; },
+  view: (y, p, d, h) => { yaw = y; pitch = p; dist = d; if (h != null) look_ = h; },
+  info: () => ({ tris: rig.tris, look }),
+};
+</script>
+</body>
+</html>

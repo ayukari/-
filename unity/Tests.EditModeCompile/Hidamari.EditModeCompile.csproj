@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- EditMode テストが「Unity の本物のアセンブリに対して」コンパイルできるかだけを見る。
+
+       ★ ライセンスが要らない。Editor を起動しないので、
+         Unity をインストールしてあれば誰でも・CI でも走らせられる。
+
+       ★ これが無いと何が起きるか、実地で踏んだ。
+         UnityEngine にも Grid（タイルマップの Grid コンポーネント）があるので、
+         `using UnityEngine;` と `using Hidamari.Core;` を並べた時点で
+         CS0104 になり、EditMode テストは**一度も通らない状態**だった。
+         素の .NET（Tests.Headless）では UnityEngine を参照しないので気づけない。
+
+       使い方は unity/README.md を見ること。
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>9.0</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>Hidamari.Tests.EditMode</AssemblyName>
+    <!-- Unity の Editor/Data を指す。環境変数 UNITY_DATA でも渡せる -->
+    <UnityData Condition="'$(UnityData)' == ''">$(UNITY_DATA)</UnityData>
+  </PropertyGroup>
+
+  <Target Name="RequireUnityData" BeforeTargets="BeforeBuild">
+    <Error Condition="'$(UnityData)' == ''"
+           Text="UNITY_DATA が要る。例: UNITY_DATA=/opt/unity/Editor/Data" />
+    <Error Condition="!Exists('$(UnityData)/Managed/UnityEngine/UnityEngine.CoreModule.dll')"
+           Text="UNITY_DATA が Unity の Editor/Data に見えない: $(UnityData)" />
+  </Target>
+
+  <ItemGroup>
+    <Compile Include="../Assets/Hidamari/Core/*.cs" />
+    <Compile Include="../Assets/Hidamari/Runtime/*.cs" />
+    <Compile Include="../Assets/Hidamari/Editor/*.cs" />
+    <Compile Include="../Assets/Hidamari/Tests/EditMode/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ★ UnityEngine.dll（前方参照だけの外皮）は**足さない**。
+         CoreModule と二重になって CS0433 になる。Unity 本体はこの外皮を使うが、
+         ここでは中身のモジュールを直接見ればよい -->
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(UnityData)/Managed/UnityEngine/UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="nunit.framework">
+      <HintPath>$(UnityData)/Resources/PackageManager/BuiltInPackages/com.unity.ext.nunit/net40/unity-custom/nunit.framework.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEditor.CoreModule">
+      <HintPath>$(UnityData)/Managed/UnityEngine/UnityEditor.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(UnityData)/Managed/Newtonsoft.Json.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,20 @@
+{
+  "name": "hidamari-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ひだまり サーバ側の中核ロジック（Phase 1）",
+  "scripts": {
+    "test": "node --test",
+    "dev": "node src/main.js",
+    "dump:floor": "node src/dump-floor.js",
+    "dump:golden": "node src/dump-golden.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "three": "^0.186.0",
+    "ws": "^8.21.3"
+  }
+}
