@@ -21,6 +21,7 @@ before(async () => {
     vendorDir: join(here, '../node_modules/three/build'),
     coreDir: join(here, '../src/core'),
     jsmDir: join(here, '../node_modules/three/examples/jsm'),
+    gatewayDir: join(here, '../src/gateway'),
   });
   port = (await gw.listen(0)).port;
 });

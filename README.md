@@ -6,6 +6,9 @@
 そして「今週やること」の共有を統合する。
 （3D は採用するが**必須にはしない** — 非力な端末では 2D ビューやリスト表示に縮退する）
 
+**▶ 触れるプロトタイプ: [https://claude.ai/code/artifact/c38b8b34-7a92-43ad-b0ac-bbcfc16f2858](https://claude.ai/code/artifact/c38b8b34-7a92-43ad-b0ac-bbcfc16f2858)**
+（サーバ無しで歩けます。アバターは83パーツ・13万通り）
+
 現在は **Phase 1（MVP）の途中**。
 設計（[docs/design/](./docs/design/)）が中心にあり、そこから
 サーバ（[server/](./server/)）と 3D クライアント（[client/](./client/)）が動くところまで来ている。
@@ -89,6 +92,7 @@ WebGL が無ければ 2D ビューに自動で切り替わる。
 | --- | --- | --- |
 | [server/](./server/) | サーバ権威の検証ロジックと WebSocket ゲートウェイ | テスト89件（通し試験9件・アセット検査15件） |
 | [client/](./client/) | 実物のクライアント。3D / 2D を同じ論理の上で切り替える | 歩く・座る・声をかける・ステータス |
+| [client/solo.html](./client/solo.html) | **ひとり用**（サーバ無し）。部屋のロジックをブラウザの中で動かす | [公開版](https://claude.ai/code/artifact/c38b8b34-7a92-43ad-b0ac-bbcfc16f2858) |
 | [assets/](./assets/) | アバターのパーツを生成・最適化する（Blender + glTF Transform） | **83パーツ・13万通り**・テクスチャ0・**694 KB** |
 | [prototype/](./prototype/) | 単体で完結した操作プロトタイプ（L0〜L7） | ブラウザだけで動く |
 | [tools/](./tools/) | 接続診断ツール（情シス提出用） | 依存0・印刷でPDF |

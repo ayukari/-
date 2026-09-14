@@ -40,10 +40,23 @@ const EYE_C = ['#2B2A3D', '#3A2A22', '#26463F', '#2E3A5A', '#4A2E3A', '#1F1F24']
 /* ---------------- パーツの種類数（avatar.blend.py と対応） ---------------- */
 const N = { body: 3, hair: 14, top: 10, bottom: 8, shoe: 5, acc: 8 };   // acc の 0 は「無し」
 
-const FILES = {
-  common: '/assets/avatar-common.glb',
-  bodies: ['/assets/avatar-body-0.glb', '/assets/avatar-body-1.glb', '/assets/avatar-body-2.glb'],
-};
+const FILES = ['avatar-common.glb', 'avatar-body-0.glb', 'avatar-body-1.glb', 'avatar-body-2.glb'];
+
+/**
+ * 1つ読む。
+ *
+ * ふつうは このファイルからの相対 URL を取りに行く（dev サーバでも、ファイルを
+ * 並べただけの場所でも、同じ1行で動く）。
+ *
+ * ★ .glb を配信できない置き場所（公開プロトタイプ）では、
+ *   `globalThis.__HIDAMARI_ASSET(name)` が中身そのもの（ArrayBuffer）を返す。
+ *   そのときはネットワークを使わずに直接読む。
+ */
+function loadPack(loader, name) {
+  const embedded = globalThis.__HIDAMARI_ASSET?.(name);
+  if (embedded) return new Promise((ok, ng) => loader.parse(embedded, '', ok, ng));
+  return loader.loadAsync(new URL(`../assets/${name}`, import.meta.url).href);
+}
 
 /** 見た目の通り数。README と確認ページに出す */
 export const VARIETY = {
@@ -62,7 +75,7 @@ let loading = null;
 export function loadAvatars() {
   if (loading) return loading;
   const loader = new GLTFLoader();
-  loading = Promise.all([loader.loadAsync(FILES.common), ...FILES.bodies.map(u => loader.loadAsync(u))])
+  loading = Promise.all(FILES.map(n => loadPack(loader, n)))
     .then(([common, ...bodies]) => {
       const index = new Map();          // パーツ名 -> SkinnedMesh（元）
       const add = gltf => gltf.scene.traverse(o => { if (o.isSkinnedMesh) index.set(o.name, o); });

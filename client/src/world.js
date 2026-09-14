@@ -7,9 +7,9 @@
  * ★ 当たり判定の規則は /core/ からサーバと同じファイルを読み込む。
  *   移動の実装が2つ存在しないようにするため（予測=ここ、権威=サーバ）。
  */
-import { Grid } from '/core/grid.js';
-import { resolveMove } from '/core/movement.js';
-import { reachableObject, nearbyActors, PROX } from '/core/proximity.js';
+import { Grid } from '../core/grid.js';
+import { resolveMove } from '../core/movement.js';
+import { reachableObject, nearbyActors, PROX } from '../core/proximity.js';
 
 /** サーバ値と予測値がこれ以上離れたら巻き戻す（タイル） */
 export const SNAP = 0.55;
@@ -23,8 +23,8 @@ const decodeState = s => ({
   inCall: !!(s & 0b10000),
 });
 
-export async function loadFloor(id = 'office') {
-  const r = await fetch(`/api/floor?id=${encodeURIComponent(id)}`);
+export async function loadFloor(id = 'office', url = null) {
+  const r = await fetch(url ?? `/api/floor?id=${encodeURIComponent(id)}`);
   if (!r.ok) throw new Error('floor ' + r.status);
   return r.json();
 }

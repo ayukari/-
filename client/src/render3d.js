@@ -18,6 +18,7 @@ const WALL_H = 1.5;
 const ANIM_NEAR = 9;
 /** それより遠い人は何フレームに1回動かすか */
 const ANIM_FAR_EVERY = 3;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const BODY_R = [0.26, 0.31, 0.36];
 const BODY_H = [0.62, 0.58, 0.52];
 
@@ -77,18 +78,19 @@ export function createRenderer3D(el, world) {
     if (!grid.isBlocked(x, y)) continue;
     (x === 0 || y === 0 || x === W - 1 || y === H - 1 ? edges : furn).push([x, y]);
   }
-  const slab = (cells, color, h) => {
+  const slab = (cells, color, h, gap = 1.0) => {
     if (!cells.length) return;
     const im = new THREE.InstancedMesh(new THREE.BoxGeometry(TILE, h, TILE), mat(color), cells.length);
     cells.forEach(([x, y], i) => {
-      m4.makeScale(0.98, 1, 0.98).setPosition(x + 0.5, h / 2, y + 0.5);
+      // 壁は隙間なく、什器は少し縮めて1つずつに見えるように
+      m4.makeScale(gap, 1, gap).setPosition(x + 0.5, h / 2, y + 0.5);
       im.setMatrixAt(i, m4);
     });
     im.instanceMatrix.needsUpdate = true;
     scene.add(im);
   };
   slab(edges, PAL.wall, WALL_H);
-  slab(furn, PAL.furn, 0.72);     // 内側はテーブルの高さ
+  slab(furn, PAL.furn, 0.72, 0.98);   // 内側はテーブルの高さ
 
   /* ---------------- オブジェクト。種別ごとに1ドローコール ---------------- */
   const KINDS = {
@@ -143,7 +145,7 @@ export function createRenderer3D(el, world) {
       av.root.add(sprite);
       scene.add(av.root);
       // 位相をずらす。同じフレームにまとめて更新すると、そのフレームだけ跳ねる
-      return { group: av.root, rig: av, label: sprite, tex, name: a.name,
+      return { group: av.root, rig: av, label: sprite, tex, name: a.name, lookRef: a.look,
                px: a.x, py: a.y, clip: 'idle', phase: a.entityId % ANIM_FAR_EVERY };
     }
     // 簡易表示（モデル到着前・読み込み失敗時）
@@ -156,7 +158,7 @@ export function createRenderer3D(el, world) {
     sprite.position.y = head.position.y + r * 1.35;
     g.add(body, head, sprite);
     scene.add(g);
-    return { group: g, body, head, label: sprite, tex, name: a.name,
+    return { group: g, body, head, label: sprite, tex, name: a.name, lookRef: a.look,
             px: a.x, py: a.y, clip: 'idle', phase: a.entityId % ANIM_FAR_EVERY };
   }
 
@@ -185,7 +187,7 @@ export function createRenderer3D(el, world) {
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-    sprite.scale.set(c.width / c.height * 0.38, 0.38, 1);
+    sprite.scale.set(c.width / c.height * 0.28, 0.28, 1);   // 名札が体より目立たない大きさ
     return { sprite, tex };
   }
 
@@ -202,7 +204,8 @@ export function createRenderer3D(el, world) {
       if (a.x === null) continue;
       let av = avatars.get(a.entityId);
       if (!av) { av = buildAvatar(a); avatars.set(a.entityId, av); }
-      if (av.name !== a.name) {          // roster が後から届いた場合は作り直す
+      // roster が後から届いた場合と、すがたを変えた場合は作り直す
+      if (av.name !== a.name || av.lookRef !== a.look) {
         drop(av); av = buildAvatar(a); avatars.set(a.entityId, av);
       }
       // 座ったら席の中心に吸い付き、机を向く。
@@ -250,9 +253,14 @@ export function createRenderer3D(el, world) {
     if (me && me.x !== null) {
       const portrait = renderer.domElement.clientHeight > renderer.domElement.clientWidth;
       // 顔が読める距離まで寄せる。広く見せるより、誰が居るか分かるほうを取る
-      const h = portrait ? 10.0 : 7.4, d = portrait ? 4.2 : 6.3;
-      target.set(me.x, 0, me.y);
-      const want = new THREE.Vector3(me.x, h, me.y + d);
+      const h = portrait ? 10.6 : 8.0, d = portrait ? 4.6 : 6.8;
+      // ★ 部屋の端では追うのをやめる。
+      //   端まで追うと画面の半分が壁になり、手前の人の名札だけが巨大に見える
+      const mx = portrait ? 3.5 : 6.0, mz = 4.0;
+      const cx = clamp(me.x, Math.min(mx, W / 2), Math.max(W - mx, W / 2));
+      const cz = clamp(me.y, Math.min(mz, H / 2), Math.max(H - mz * 0.6, H / 2));
+      target.set(cx, 0, cz);
+      const want = new THREE.Vector3(cx, h, cz + d);
       if (!camReady) { camera.position.copy(want); camReady = true; }
       else camera.position.lerp(want, 0.12);
       camera.lookAt(target);

@@ -23,7 +23,7 @@ const MIME = {
 
 const COLORS = ['#C8873C', '#4F8299', '#7A6FA8', '#5F8C6B', '#B25F6A', '#8A7B5E'];
 
-export function createGateway({ clientDir, vendorDir, coreDir, jsmDir, tickHz = 10 }) {
+export function createGateway({ clientDir, vendorDir, coreDir, jsmDir, gatewayDir, tickHz = 10 }) {
   const world = new World();
   /** @type {Map<import('ws').WebSocket, {session:Session}>} */
   const peers = new Map();
@@ -42,6 +42,8 @@ export function createGateway({ clientDir, vendorDir, coreDir, jsmDir, tickHz = 
       if (url.pathname.startsWith('/vendor/')) { base = vendorDir; rel = url.pathname.slice(8); }
       else if (url.pathname.startsWith('/core/')) { base = coreDir; rel = url.pathname.slice(6); }
       else if (url.pathname.startsWith('/jsm/')) { base = jsmDir; rel = url.pathname.slice(5); }
+      // ソロ版は部屋のロジックをブラウザの中で動かす（同じファイルを使う）
+      else if (url.pathname.startsWith('/gateway/')) { base = gatewayDir; rel = url.pathname.slice(9); }
       else rel = (url.pathname === '/' ? 'index.html' : url.pathname.slice(1));
       // パストラバーサルを弾く
       const safe = normalize(rel).replace(/^(\.\.[/\\])+/, '');

@@ -9,6 +9,7 @@ const gw = createGateway({
   vendorDir: join(here, '../node_modules/three/build'),
   coreDir: join(here, 'core'),
   jsmDir: join(here, '../node_modules/three/examples/jsm'),
+  gatewayDir: join(here, 'gateway'),
 });
 const port = Number(process.env.PORT) || 8787;
 const addr = await gw.listen(port, '127.0.0.1');

@@ -6,8 +6,11 @@
 
 ```bash
 cd ../server && npm install && npm run dev
-# → http://127.0.0.1:8787/
+# → http://127.0.0.1:8787/         本番のクライアント（サーバに接続）
+# → http://127.0.0.1:8787/solo.html ひとり用（サーバ無しで動く）
 ```
+
+**▶ 公開版: [https://claude.ai/code/artifact/c38b8b34-7a92-43ad-b0ac-bbcfc16f2858](https://claude.ai/code/artifact/c38b8b34-7a92-43ad-b0ac-bbcfc16f2858)**
 
 複数人を試すときは別タブで名前を変えて開く。
 
@@ -20,6 +23,26 @@ http://127.0.0.1:8787/?name=みなと&view=2d   ← 2D ビューを強制
 > ★ `?u=` `?name=` で本人を名乗れるのは**開発用の仮認証**である。
 > 本番は OIDC（[security-review-pack/02 §7](../docs/security-review-pack/02-data-flow.md)）で、
 > 差し替えるのは `server/src/adapters/wsServer.js` の1箇所だけで済むようにしてある。
+
+## ひとり用（`solo.html` / `src/solo.js`）
+
+**部屋のロジックはサーバと同じ [`gateway/room.js`](../server/src/gateway/room.js) を、
+ブラウザの中で動かしている。**
+
+移動の速度上限も、壁の当たり判定も、着席の4条件も、本番とまったく同じコードが働く。
+違うのは「誰が権威か」だけで、ひとりしかいないので権威も自分にある。
+
+```
+本番    入力 → WebSocket → Session → Room → tick → WebSocket → 描画
+ひとり  入力 →                       Room → tick →              描画
+```
+
+同居人はボットで、席を探して座り、しばらくして立ち、ときどきステータスを変える。
+「すがた」ボタンでその場で着替えられる（13万通り）。
+
+公開するときは [`make-artifact.mjs`](./make-artifact.mjs) が `solo.html` から中身だけを取り出し、
+`.glb` を base64 で1つの `.js` に畳む（**公開先は `.glb` を配信できない**ため）。
+画面は `solo.html` が正で、2箇所に書かない。
 
 ## 配線
 
