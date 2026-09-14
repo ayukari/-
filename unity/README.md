@@ -13,8 +13,10 @@
 Unity Hub → Add project from disk → このフォルダ（unity/）
 ```
 
-`ProjectSettings/ProjectVersion.txt` は `6000.0.0f1` と書いてある。
-手元の Unity 6 が別のパッチ版なら、Hub がアップグレードを勧めてくる。そのままでよい。
+`ProjectSettings/ProjectVersion.txt` は **6000.6.0f1**（利用者の手元に入っている版）。
+別のパッチ版なら Hub がアップグレードを勧めてくる。Unity 6 の範囲ならそのままでよい。
+なお、この作業環境に入れてあるのは 6000.3.24f1 なので、
+`Tests.EditModeCompile` はそちらのアセンブリに当てている。
 
 `Packages/manifest.json` に書いたバージョンは、Unity のレジストリに問い合わせて
 実在を確かめてある（`com.unity.test-framework` は 1.4.5、最新は 1.4.6）。
@@ -117,7 +119,7 @@ dotnet run --project unity/Tests.Headless
 
 | 症状 | 原因と直し方 |
 | --- | --- |
-| Hub が「別のバージョンで作られた」と言う | `ProjectVersion.txt` は 6000.3.24f1。手元の **Unity 6 なら upgrade でよい**。Unity 2022 以前では開かない |
+| Hub が「別のバージョンで作られた」と言う | `ProjectVersion.txt` は 6000.6.0f1。手元の **Unity 6 なら upgrade でよい**。Unity 2022 以前では開かない |
 | Package Manager がバージョンを解決できない | `Packages/manifest.json` の版を手元にあるものに直す。実在は確認済みだが、解決の実行は未検証 |
 | 部屋が**真っ黒**／面が**抜けている** | 頂点カラーが `NaN`（`Clamp01` 漏れ）か、三角形の巻き順が逆。ブラウザ版で両方やった。**スクリーンショットがあれば直せる** |
 | 家具が**ピンク** | `Hidamari/Room` シェーダが見つかっていない。`Assets/Hidamari/Runtime/Room.shader` がインポートされているか |
