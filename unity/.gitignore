@@ -32,5 +32,8 @@ crashlytics-build.properties
 bin/
 obj/
 
-# ただし Tests.Headless の csproj は残す（手で書いている）
+# ★ Unity が自動生成する .csproj は捨てるが、**手で書いた検査用は残す**。
+#   ここを1行で済ませると、新しく足した Tests.* が黙って無視される。
+#   実際に Tests.EditModeCompile を足したとき、コミットから抜け落ちた。
 !Tests.Headless/*.csproj
+!Tests.EditModeCompile/*.csproj
