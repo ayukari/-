@@ -22,7 +22,7 @@
 ■ 寸法規約
     1ユニット = 1タイル ≒ 1.0m。全高 1.67m。+Z が正面（glTF 変換後）
 """
-import bpy, math, sys, os
+import bpy, bmesh, math, sys, os
 from mathutils import Vector
 
 # ---- 部位ID。client/src/avatar.js の PART と対応する ----
@@ -96,9 +96,11 @@ def tag(o, part, color=None, shade=True):
     return o
 
 
-def piece(o, part, bone, color=None, shade=True):
-    """1部品を仕上げる。座標を焼き、色（＝部位ID＋陰）を入れ、1本の骨に結びつける"""
+def piece(o, part, bone, color=None, shade=True, smooth=38.0):
+    """1部品を仕上げる。座標を焼き、滑らかさを決め、色（＝部位ID＋陰）を入れ、骨に結びつける"""
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    if smooth:
+        smooth_by_angle(o, smooth)
     tag(o, part, color, shade)
     o.vertex_groups.new(name=bone).add(range(len(o.data.vertices)), 1.0, 'REPLACE')
     return o
@@ -165,11 +167,127 @@ def carve(o, z_min, y_max):
     return o
 
 
-def limb(r1, r2, z0, z1, x, part, bone, cap=True, verts=8, color=None):
-    ps = [cone(r1, r2, z0 - z1, (x, 0, (z0 + z1) / 2), verts)]
+def smooth_by_angle(o, deg=38.0):
+    """角度で滑らかさを決める。
+
+    ★ これが「かくかく」の正体だった。
+      球だけを滑らかにして、円錐と箱をフラットのままにしていたので、
+      手足も胴も服も、面の継ぎ目が全部見えていた。
+      角の立った所（板の縁・箱）は角のまま、丸い所だけ滑らかにする。
+    """
+    bpy.ops.object.select_all(action='DESELECT')
+    o.select_set(True)
+    bpy.context.view_layer.objects.active = o
+    bpy.ops.object.shade_smooth_by_angle(angle=D(deg))
+    return o
+
+
+def swept(profile, seg=10, x=0.0, y=0.0, squash=1.0):
+    """輪郭（高さと半径の並び）を回して1枚の面にする。
+
+    ★ 手足を「円錐 + 端の球」で作ると、必ず継ぎ目が出る。
+      別々の面なので、どんなに滑らかにしても境目が線として残る。
+      下から上まで1枚の面にすれば、継ぎ目そのものが無くなる。
+
+    @param profile [(z, r), ...] 下から上へ。r=0 の輪は1点に閉じる
+    """
+    bm = bmesh.new()
+    rings = []
+    for z, r in profile:
+        if r <= 1e-6:
+            rings.append([bm.verts.new((x, y, z))])
+        else:
+            rings.append([bm.verts.new((x + math.cos(i / seg * math.tau) * r,
+                                        y + math.sin(i / seg * math.tau) * r * squash, z))
+                          for i in range(seg)])
+    for a, b in zip(rings, rings[1:]):
+        if len(a) == 1:
+            for i in range(seg):
+                bm.faces.new([a[0], b[i], b[(i + 1) % seg]])
+        elif len(b) == 1:
+            for i in range(seg):
+                bm.faces.new([a[i], a[(i + 1) % seg], b[0]])
+        else:
+            for i in range(seg):
+                j = (i + 1) % seg
+                bm.faces.new([a[i], a[j], b[j], b[i]])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+
+    me = bpy.data.meshes.new('swept')
+    bm.to_mesh(me); bm.free()
+    for pl in me.polygons:
+        pl.use_smooth = True
+    o = bpy.data.objects.new('swept', me)
+    bpy.context.collection.objects.link(o)
+    return o
+
+
+def dome(z, r, n=3, up=True, flat=0.85):
+    """丸い端。輪郭の端に足すと、切りっぱなしにならない"""
+    out = []
+    for i in range(n, -1, -1) if up else range(n + 1):
+        t = i / n * math.pi / 2
+        out.append((z + (1 if up else -1) * r * math.sin(t) * flat, r * math.cos(t)))
+    return out if up else out
+
+
+def bind_split(o, bone_hi, bone_lo, z_mid, blend=0.055):
+    """高さで2つの骨に振り分け、境目はなめらかに混ぜる。
+
+    ★ 上腕と前腕を別のメッシュにすると、肘に必ず継ぎ目が出る。
+      1本の管にして、骨だけ高さで分ければ、曲がるのに継ぎ目は無い。
+    """
+    if bone_hi == bone_lo:            # 同じ名前で2つ作ると Blender が別名を付け、骨が増えてしまう
+        o.vertex_groups.new(name=bone_hi).add(range(len(o.data.vertices)), 1.0, 'REPLACE')
+        return o
+    g_hi = o.vertex_groups.new(name=bone_hi)
+    g_lo = o.vertex_groups.new(name=bone_lo)
+    for i, v in enumerate(o.data.vertices):
+        t = min(1.0, max(0.0, (v.co.z - (z_mid - blend)) / (2 * blend)))
+        g_hi.add([i], t, 'REPLACE')
+        g_lo.add([i], 1.0 - t, 'REPLACE')
+    return o
+
+
+def limb2(radii, zs, x, part, bone_hi, bone_lo, verts=10, color=None, shade=True,
+          cap_top=True, end='dome', flare=1.0):
+    """肩→肘→手首（または腰→膝→足首）を1本の管で作る。
+
+    end … 'dome' 丸く閉じる（素肌の端） / 'hem' 少し広げて開いたまま（服の裾）
+    """
+    (r0, r1, r2), (z0, z1, z2) = radii, zs
+    prof = []
+    if cap_top:
+        prof += [(z0 + r0 * math.sin(t) * 0.75, r0 * math.cos(t))
+                 for t in [math.pi / 2 * i / 3 for i in range(3, 0, -1)]]
+    prof += [(z0, r0), (z0 + (z1 - z0) * 0.55, (r0 + r1) / 2),
+             (z1, r1), (z1 + (z2 - z1) * 0.5, (r1 + r2) / 2 * 1.01), (z2, r2 * flare)]
+    if end == 'dome':
+        prof += [(z2 - r2 * math.sin(t) * 0.75, r2 * math.cos(t))
+                 for t in [math.pi / 2 * i / 3 for i in range(1, 4)]]
+    else:
+        prof += [(z2 - 0.018, r2 * flare * 0.97), (z2 - 0.026, r2 * flare * 0.80)]
+    o = swept(sorted(prof), seg=verts, x=x)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    smooth_by_angle(o, 38.0)
+    tag(o, part, color, shade)
+    return bind_split(o, bone_hi, bone_lo, z1)
+
+
+def limb(r1, r2, z0, z1, x, part, bone, cap=True, verts=10, color=None, shade=True):
+    """手足。上（z0）から下（z1）へ1枚の面で作る。
+
+    cap=True … 上端を丸める（肩・腿の付け根）
+    下端はいつも丸める（肘・手首・膝・足首で切れて見えないように）
+    """
+    prof = []
     if cap:
-        ps.append(sphere(r1, (x, 0, z0), seg=6, ring=4))
-    return piece(join(ps, 'tmp'), part, bone, color)
+        prof += [(z0 + r1 * math.sin(t) * 0.8, r1 * math.cos(t))
+                 for t in [math.pi / 2 * i / 3 for i in range(3, 0, -1)]]
+    prof += [(z0, r1), (z1 + (z0 - z1) * 0.45, (r1 + r2) / 2 * 1.02), (z1, r2)]
+    prof += [(z1 - r2 * math.sin(t) * 0.8, r2 * math.cos(t))
+             for t in [math.pi / 2 * i / 3 for i in range(1, 4)]]
+    return piece(swept(sorted(prof), seg=verts, x=x), part, bone, color, shade)
 
 
 # ================================================================ 素体
@@ -178,14 +296,15 @@ def build_base(w):
     ps = []
 
     # --- 頭 ---
-    head = sphere(HEAD_R, (0, 0, HEAD_Z), (1.0, 0.94, 1.02), 12, 7)
+    head = sphere(HEAD_R, (0, 0, HEAD_Z), (1.0, 0.94, 1.02), 16, 11)
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     for v in head.data.vertices:                 # あごをすぼめる
         k = chin_k(v.co.z)
         v.co.x *= k
         v.co.y *= k
     ps.append(piece(head, SKIN, 'head'))
-    ps.append(piece(cone(0.062, 0.058, 0.10, (0, 0, NECK_Z - 0.02), 6), SKIN, 'neck'))
+    ps.append(piece(swept([(NECK_Z - 0.08, 0.060), (NECK_Z + 0.02, 0.056),
+                          (NECK_Z + 0.05, 0.050)], seg=10), SKIN, 'neck'))
 
     # --- 顔。すべて face_y() で頭の表面に貼る ---
     EX, BROW_Z, MOUTH_Z, BLUSH_Z = 0.078, 1.484, 1.376, 1.390
@@ -211,28 +330,25 @@ def build_base(w):
     # 胴と腰は必ずトップス／ボトムスに隠れる。隙間を埋めるだけの最小形にする
     # ★ 服より十分に細くする。近いと、角の数が違うせいで素体の角が服から突き出る
     #   （タンクトップで胸に茶色い筋が出ていた）
-    ps.append(piece(cone(0.118 * w, 0.140 * w, CHEST_Z - HIP_Z + 0.02,
-                         (0, 0, (HIP_Z + CHEST_Z) / 2), 6), SKIN, 'chest'))
-    ps.append(piece(sphere(0.124 * w, (0, 0, HIP_Z + 0.015), (1, 0.85, 0.8), 6, 4),
-                    SKIN, 'hips'))
+    ps.append(piece(torso_tube(0.118 * w, 0.140 * w, HIP_Z, CHEST_Z, 8), SKIN, 'chest'))
 
     # --- 腕 ---
     for s, side in ((1, 'L'), (-1, 'R')):
         x = s * SHOULDER_X * w
-        # 肩の丸みはトップス側が持っているので、素体側には要らない
-        ps.append(limb(0.050 * w, 0.044 * w, ARM_TOP, ELBOW_Z, x, SKIN, f'upperarm.{side}',
-                       cap=False, verts=6))
-        ps.append(limb(0.044 * w, 0.040 * w, ELBOW_Z, WRIST_Z, x, SKIN, f'lowerarm.{side}', verts=6))
-        ps.append(piece(sphere(0.048 * w, (x, 0, WRIST_Z - 0.033), (1, 0.85, 1.05), 6, 4),
+        # 肩から手首まで1本。肘で骨だけ分ける（継ぎ目を作らない）
+        ps.append(limb2((0.050 * w, 0.0435 * w, 0.039 * w), (ARM_TOP, ELBOW_Z, WRIST_Z), x,
+                        SKIN, f'upperarm.{side}', f'lowerarm.{side}', cap_top=False))
+        ps.append(piece(sphere(0.048 * w, (x, 0, WRIST_Z - 0.028), (1, 0.86, 1.08), 10, 7),
                         SKIN, f'hand.{side}'))
 
     # --- 脚と素足 ---
     for s, side in ((1, 'L'), (-1, 'R')):
         x = s * HIP_X * w
-        ps.append(limb(0.070 * w, 0.056 * w, HIP_Z - 0.03, KNEE_Z, x, SKIN, f'upperleg.{side}',
-                       cap=False, verts=6))
-        ps.append(limb(0.056 * w, 0.045 * w, KNEE_Z, ANKLE_Z, x, SKIN, f'lowerleg.{side}', verts=6))
-        ps.append(piece(box((x, FRONT * 0.018, 0.036), (0.092, 0.132, 0.072)), SKIN, f'foot.{side}'))
+        ps.append(limb2((0.070 * w, 0.0545 * w, 0.046 * w), (HIP_Z - 0.02, KNEE_Z, ANKLE_Z), x,
+                        SKIN, f'upperleg.{side}', f'lowerleg.{side}', cap_top=False, end='hem'))
+        # 足。箱だと甲が角張るので、丸い塊を潰して作る
+        ps.append(piece(sphere(0.10, (x, FRONT * 0.026, 0.048), (0.44, 1.00, 0.46), 10, 6),
+                        SKIN, f'foot.{side}'))
 
     return join(ps, 'base')
 
@@ -242,7 +358,7 @@ def hair_cap(ps, vol=1.0, line=FRINGE_Z):
     """頭に被さる部分。vol で毛量を変える。上から見下ろすカメラでは、
     ここの大きさの差が髪型の違いとしていちばん効く"""
     cap = sphere(HEAD_R * (1.04 + 0.06 * vol), (0, 0.008 * vol, HEAD_Z + 0.020 * vol),
-                 (1.0, 1.0, 0.97), 10, 6)
+                 (1.0, 1.0, 0.97), 14, 9)
     ps.append(piece(carve(cap, line, -0.02), HAIR, 'head'))
 
 
@@ -251,7 +367,7 @@ def fringe(ps, kind, vol=1.0):
         return
     if kind == 'straight':
         ps.append(piece(sphere(HEAD_R * 0.84 * vol, (0, FRONT * 0.075, FRINGE_Z + 0.072),
-                               (1.12, 0.92, 0.54), 10, 4), HAIR, 'head'))
+                               (1.12, 0.92, 0.54), 12, 6), HAIR, 'head'))
     elif kind == 'parted':
         for s in (1, -1):                       # 真ん中を空けて分け目を見せる
             ps.append(piece(sphere(HEAD_R * 0.50 * vol, (s * 0.078, FRONT * 0.068, FRINGE_Z + 0.090),
@@ -400,33 +516,41 @@ TOP_DEFS = [
 ]
 
 
+def torso_tube(rb, rt, z0, z1, seg=12):
+    """裾 → 腰 → 胸 → 肩 を1枚の面で。腰を少し絞ると人の形に見える"""
+    mid = z0 + (z1 - z0) * 0.45
+    prof = [(z0 - rb * 0.26, rb * 0.62), (z0 - rb * 0.10, rb * 0.94), (z0, rb),
+            (mid, rb * 0.955 + rt * 0.045), (z1 - 0.10, rt),
+            (z1 - 0.035, rt * 0.97), (z1 + 0.01, rt * 0.80), (z1 + 0.045, rt * 0.46)]
+    return swept(prof, seg=seg)
+
+
 def build_top(i, w):
     name, sleeve, thick, collar, hem, extra = TOP_DEFS[i]
     ps = []
     rb, rt = 0.150 * w * thick, 0.178 * w * thick
     z0, z1 = HIP_Z - hem, CHEST_Z
 
-    ps.append(piece(cone(rb, rt, z1 - z0, (0, 0, (z0 + z1) / 2), 8), TOP, 'chest'))
-    ps.append(piece(sphere(rt, (0, 0, z1 - 0.045), (1, 0.86, 0.74), 8, 5), TOP, 'chest'))
-    ps.append(piece(sphere(rb, (0, 0, z0 + 0.015), (1, 0.88, 0.42), 6, 4), TOP, 'hips'))
+    ps.append(piece(torso_tube(rb, rt, z0, z1), TOP, 'chest'))
     collar_of(ps, collar, w, thick)
 
     # 袖
     for s, side in ((1, 'L'), (-1, 'R')):
         x = s * SHOULDER_X * w
-        ps.append(piece(sphere(0.060 * w * thick, (x, 0, ARM_TOP), (1, 0.9, 0.95), 6, 4),
+        ps.append(piece(sphere(0.060 * w * thick, (x, 0, ARM_TOP), (1, 0.9, 0.95), 10, 5),
                         TOP, f'upperarm.{side}'))     # 肩は袖が無くても要る
         if sleeve <= 0:
             continue
         end = ARM_TOP - sleeve * (ARM_TOP - SLEEVE_END)
+        sr = 0.058 * w * thick
         if end < ELBOW_Z:
-            ps.append(limb(0.058 * w * thick, 0.050 * w * thick, ARM_TOP, ELBOW_Z, x,
-                           TOP, f'upperarm.{side}', cap=False, verts=6))
-            ps.append(limb(0.050 * w * thick, 0.046 * w * thick, ELBOW_Z, end, x,
-                           TOP, f'lowerarm.{side}', cap=False, verts=6))
+            ps.append(limb2((sr, 0.050 * w * thick, 0.046 * w * thick),
+                            (ARM_TOP, ELBOW_Z, end), x, TOP,
+                            f'upperarm.{side}', f'lowerarm.{side}', cap_top=False, end='hem'))
         else:
-            ps.append(limb(0.058 * w * thick, 0.052 * w * thick, ARM_TOP, end, x,
-                           TOP, f'upperarm.{side}', cap=False, verts=6))
+            ps.append(limb2((sr, (sr + 0.052 * w * thick) / 2, 0.052 * w * thick),
+                            (ARM_TOP, (ARM_TOP + end) / 2, end), x, TOP,
+                            f'upperarm.{side}', f'upperarm.{side}', cap_top=False, end='hem'))
 
     if collar == 'hood':
         ps.append(piece(sphere(0.072, (0, 0, CHEST_Z + 0.012), (1.10, 1.0, 0.38), 6, 4), TOP, 'chest'))
@@ -493,13 +617,15 @@ def build_bottom(i, w):
         for s, side in ((1, 'L'), (-1, 'R')):
             x = s * HIP_X * w
             if end < KNEE_Z:
-                ps.append(limb(0.082 * w * flare, 0.068 * w * flare, HIP_Z - 0.02, KNEE_Z, x,
-                               BOTTOM, f'upperleg.{side}', cap=False, verts=6))
-                ps.append(limb(0.068 * w * flare, 0.062 * w * flare, KNEE_Z, end, x,
-                               BOTTOM, f'lowerleg.{side}', cap=False, verts=6))
+                ps.append(limb2((0.082 * w * flare, 0.068 * w * flare, 0.063 * w * flare),
+                                (HIP_Z - 0.02, KNEE_Z, end), x, BOTTOM,
+                                f'upperleg.{side}', f'lowerleg.{side}', cap_top=False,
+                                end='hem', flare=1.04))
             else:
-                ps.append(limb(0.082 * w * flare, 0.072 * w * flare, HIP_Z - 0.02, end, x,
-                               BOTTOM, f'upperleg.{side}', cap=False, verts=6))
+                ps.append(limb2((0.082 * w * flare, 0.074 * w * flare, 0.070 * w * flare),
+                                (HIP_Z - 0.02, (HIP_Z + end) / 2, end), x, BOTTOM,
+                                f'upperleg.{side}', f'upperleg.{side}', cap_top=False,
+                                end='hem', flare=1.05))
 
     if extra == 'pocket':
         # 腿の横ポケット。トップスに隠れない位置なので、どの服と合わせても見える
@@ -514,11 +640,11 @@ def build_bottom(i, w):
 # ================================================================ 靴
 # name, 高さ, 奥行き, 幅（m）
 SHOE_DEFS = [
-    ('sneaker', 0.090, 0.215, 0.104),
-    ('loafer',  0.066, 0.208, 0.098),
-    ('boot',    0.200, 0.205, 0.102),
-    ('sandal',  0.052, 0.210, 0.100),
-    ('hightop', 0.140, 0.212, 0.106),
+    ('sneaker', 0.098, 0.232, 0.106),
+    ('loafer',  0.074, 0.226, 0.100),
+    ('boot',    0.200, 0.224, 0.104),
+    ('sandal',  0.062, 0.228, 0.102),
+    ('hightop', 0.148, 0.230, 0.108),
 ]
 
 
@@ -527,14 +653,15 @@ def build_shoe(i, w):
     ps = []
     for s, side in ((1, 'L'), (-1, 'R')):
         x = s * HIP_X * w
-        # ★ 寸法はそのまま「幅・奥行き・高さ」。素足（0.092 × 0.132）より一回り大きくする
-        ps.append(piece(box((x, FRONT * 0.020, h / 2), (wd * w, toe, h)), SHOES, f'foot.{side}'))
-        if h > 0.10:                        # 長い靴は足首側を細くして脚に沿わせる
-            ps.append(piece(cone(0.058 * w, 0.052 * w, h * 0.9, (x, 0, h * 0.95), 6),
-                            SHOES, f'lowerleg.{side}'))
-        else:
-            ps.append(piece(box((x, FRONT * 0.024, 0.014), (wd * 1.06 * w, toe * 1.04, 0.028)),
-                            DARK, f'foot.{side}'))
+        # 甲は丸い塊、靴底は薄い板。素足（0.096 × 0.244）より一回り大きく
+        ps.append(piece(sphere(0.11, (x, FRONT * 0.030, h * 0.50),
+                               (wd / 0.22, toe / 0.22, h / 0.150), 10, 7), SHOES, f'foot.{side}'))
+        ps.append(piece(swept([(0.006, toe * 0.50), (0.020, toe * 0.53), (0.034, toe * 0.49)],
+                              seg=10, x=x, y=FRONT * 0.030, squash=wd / toe),
+                        DARK, f'foot.{side}'))
+        if h > 0.10:                        # 長い靴は足首まで覆う
+            ps.append(piece(swept([(h * 0.6, 0.062 * w), (h * 0.95, 0.058 * w), (h * 1.12, 0.050 * w)],
+                                  seg=10, x=x), SHOES, f'lowerleg.{side}'))
     return join(ps, f'shoe_{i:02d}')
 
 

@@ -6,7 +6,8 @@
   "description": "ひだまり サーバ側の中核ロジック（Phase 1）",
   "scripts": {
     "test": "node --test",
-    "dev": "node src/main.js"
+    "dev": "node src/main.js",
+    "dump:floor": "node src/dump-floor.js"
   },
   "engines": {
     "node": ">=20"

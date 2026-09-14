@@ -205,7 +205,7 @@ async function boot() {
   requestAnimationFrame(loop);
 
   // 動作確認用の覗き口
-  globalThis.__solo = { world, room, shadows: () => renderer.info().shadows };
+  globalThis.__solo = { world, room, info: () => renderer.info() };
 
   function inputVector() {
     let dx = 0, dy = 0;

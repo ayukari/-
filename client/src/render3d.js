@@ -5,20 +5,22 @@
  * 同じインターフェースを render2d.js が実装しているので差し替えられる。
  *
  * 描画予算（10 §2）を守るための決まり:
- *   - 影なし・ポストエフェクトなし（MeshLambertMaterial + 2灯）
+ *   - 動的な影・ポストエフェクトなし（MeshLambertMaterial + 3灯）
  *   - 静的なものは InstancedMesh で1ドローコールに畳む
  *   - アバターは 本体 + 頭 + 名札 の3つ。人数分しか増えない
+ *   - 部屋（床・壁・天井の庇・家具）は props.js が three 側で組む。DL は 0 バイト
  */
 import * as THREE from 'three';
 import { loadAvatars, makeAvatar, toonGradient } from './avatar.js';
+import { propGeometry, buildFloor, buildWalls, buildCeiling } from './props.js';
 
-const TILE = 1;                 // 1タイル = 1ユニット ≒ 1.0m（10 §5）
-const WALL_H = 1.5;
 /** ここまでは毎フレーム動かす（タイル） */
 const ANIM_NEAR = 9;
 /** それより遠い人は何フレームに1回動かすか */
 const ANIM_FAR_EVERY = 3;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+/** 見下ろす角度。寝かせると床ばかり、立てると机の側面が消える。この辺りが両方見える */
+const PITCH = 56 * Math.PI / 180;
 const BODY_R = [0.26, 0.31, 0.36];
 const BODY_H = [0.62, 0.58, 0.52];
 
@@ -33,93 +35,62 @@ export function createRenderer3D(el, world) {
   el.appendChild(renderer.domElement);
 
   const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-  const PAL = dark
-    ? { sky: 0x141a21, ground: 0x232b33, floor: 0x4a4237, wall: 0x39424d, furn: 0x6b5a45, meet: 0x3a2e1c, focus: 0x1e2c34, line: 0x2b343d }
-    : { sky: 0xdce4ec, ground: 0xc9d2dc, floor: 0xd8cdbc, wall: 0xc4cbd3, furn: 0xb59b78, meet: 0xf2e2cb, focus: 0xdce9ef, line: 0xbfc7d0 };
+  // 部屋の外は「台の上に置いた模型」のように、無地で静かにしておく。
+  // 空や地面を描くと、屋外に建っている建物に見えてしまう
+  const PAL = dark ? { sky: 0x14120E } : { sky: 0xE7E2D9 };
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(PAL.sky);
-  scene.fog = new THREE.Fog(PAL.sky, 26, 46);
+  // 部屋の外はすぐ霞ませる。見せたいのは部屋の中
+  scene.fog = new THREE.Fog(PAL.sky, 26, 52);
 
   // 3灯。動的な影は焼かない（02 §6.3）ので、光の当て方だけで立体を出す。
   //   キー   … 上手前から。暖色
   //   フィル … 半球光。下側は木の床からの照り返しを想定した色
   //   リム   … 後ろから寒色。背景から輪郭を分けるのはこれが効く
-  scene.add(new THREE.HemisphereLight(0xFFF3E4, dark ? 0x1C222A : 0xC3A183, 1.00));
-  const key = new THREE.DirectionalLight(0xFFF1DA, 1.15);
+  // ★ 暗い配色では光そのものを落とす。家具の色は1つしか持っていないので、
+  //   灯りを絞らないと、真っ暗な部屋に昼間の机が浮いているように見える
+  const lit = dark ? 0.56 : 1;
+  scene.add(new THREE.HemisphereLight(0xFFF3E4, dark ? 0x1C222A : 0xC3A183, 1.00 * lit));
+  const key = new THREE.DirectionalLight(0xFFF1DA, 1.15 * lit);
   key.position.set(5, 10, 4);
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0xBED4EC, 0.45);
+  const rim = new THREE.DirectionalLight(0xBED4EC, dark ? 0.30 : 0.45);
   rim.position.set(-5, 3.5, -7);
   scene.add(rim);
 
-  const camera = new THREE.PerspectiveCamera(44, 1, 0.5, 120);
+  // 画角を狭くすると遠近が弱まり、箱庭に見える（gogh 系の見え方）
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.5, 140);
 
   /* ---------------- 静的な地形。1回作って動かさない ---------------- */
   const mat = c => new THREE.MeshLambertMaterial({ color: c });
+  /** 頂点カラーに色も陰も入っている。部屋のものは全部これ1つで描ける */
+  const vc = () => new THREE.MeshLambertMaterial({ vertexColors: true });
 
-  // 部屋の外の地面。縦持ちで空だけが見えるのを防ぐ（実機で見つけた問題）
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), mat(PAL.ground));
-  ground.rotation.x = -Math.PI / 2; ground.position.set(W / 2, -0.04, H / 2);
-  scene.add(ground);
-
-  const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(W, H), mat(PAL.floor));
-  floorMesh.rotation.x = -Math.PI / 2;
-  floorMesh.position.set(W / 2, 0, H / 2);
+  const blockedAt = (x, y) => x >= 0 && y >= 0 && x < W && y < H && grid.isBlocked(x, y);
+  // 窓の位置を渡して、床に日なたを焼いてもらう
+  const windows = (floor.objects ?? []).filter(o => o.kind === 'window');
+  const floorMesh = new THREE.Mesh(buildFloor(W, H, blockedAt, dark, windows, floor.areas ?? []), vc());
   scene.add(floorMesh);
+  scene.add(new THREE.Mesh(buildWalls(W, H, blockedAt, dark), vc()));
+  scene.add(new THREE.Mesh(buildCeiling(W, H, dark), vc()));
 
-  // エリア（会議室・集中ルーム）は床の色違いで示す
-  for (const a of floor.areas ?? []) {
-    const p = new THREE.Mesh(new THREE.PlaneGeometry(a.w, a.h),
-      mat(a.kind === 'MEETING' ? PAL.meet : PAL.focus));
-    p.rotation.x = -Math.PI / 2;
-    p.position.set(a.x + a.w / 2, 0.01, a.y + a.h / 2);
-    scene.add(p);
-  }
+  // エリア（会議室・集中ルーム）の印は床の頂点カラーに焼いてある（props.js）
 
-  // 通行不可タイル。外周の壁と内側の什器は見分けがつかないと困るので色を分ける。
-  // それぞれ InstancedMesh 1つ = 2ドローコールで済む
+  /* ---------------- 家具。種別ごとに1ドローコール（10 §5） ---------------- */
   const m4 = new THREE.Matrix4();
-  const edges = [], furn = [];
-  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) {
-    if (!grid.isBlocked(x, y)) continue;
-    (x === 0 || y === 0 || x === W - 1 || y === H - 1 ? edges : furn).push([x, y]);
-  }
-  const slab = (cells, color, h, gap = 1.0) => {
-    if (!cells.length) return;
-    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(TILE, h, TILE), mat(color), cells.length);
-    cells.forEach(([x, y], i) => {
-      // 壁は隙間なく、什器は少し縮めて1つずつに見えるように
-      m4.makeScale(gap, 1, gap).setPosition(x + 0.5, h / 2, y + 0.5);
-      im.setMatrixAt(i, m4);
-    });
-    im.instanceMatrix.needsUpdate = true;
-    scene.add(im);
-  };
-  slab(edges, PAL.wall, WALL_H);
-  slab(furn, PAL.furn, 0.72, 0.98);   // 内側はテーブルの高さ
-
-  /* ---------------- オブジェクト。種別ごとに1ドローコール ---------------- */
-  const KINDS = {
-    seat:  { geo: () => new THREE.CylinderGeometry(0.28, 0.22, 0.42, 10), c: 0x8a7b5e, y: 0.21 },
-    note:  { geo: () => new THREE.BoxGeometry(0.5, 0.7, 0.08), c: 0xc8873c, y: 0.35 },
-    board: { geo: () => new THREE.BoxGeometry(1.2, 0.8, 0.1), c: 0x4f8299, y: 0.62 },
-    sign:  { geo: () => new THREE.BoxGeometry(0.6, 0.9, 0.08), c: 0x7a6fa8, y: 0.45 },
-    whiteboard: { geo: () => new THREE.BoxGeometry(1.6, 1.1, 0.1), c: 0xeef1f4, y: 0.7 },
-    plant: { geo: () => new THREE.ConeGeometry(0.34, 0.9, 8), c: 0x5f8c6b, y: 0.45 },
-  };
-  const objMeshes = new Map();
-  for (const [kind, spec] of Object.entries(KINDS)) {
-    const list = (floor.objects ?? []).filter(o => o.kind === kind);
-    if (!list.length) continue;
-    const im = new THREE.InstancedMesh(spec.geo(), mat(spec.c), list.length);
+  const objects = floor.objects ?? [];
+  for (const kind of new Set(objects.map(o => o.kind))) {
+    const geo = propGeometry(kind);
+    if (!geo) continue;
+    const list = objects.filter(o => o.kind === kind);
+    const im = new THREE.InstancedMesh(geo, vc(), list.length);
     list.forEach((o, i) => {
-      m4.makeRotationY(0).setPosition(o.x + 0.5, spec.y, o.y + 0.5);
+      m4.makeRotationY((o.rot ?? 0) * Math.PI / 180).setPosition(o.x + 0.5, 0, o.y + 0.5);
       im.setMatrixAt(i, m4);
     });
     im.instanceMatrix.needsUpdate = true;
     scene.add(im);
-    objMeshes.set(kind, { im, list });
   }
 
   /* ---------------- 接地影（10 §2 の「ブロブシャドウ」） ----------------
@@ -282,20 +253,32 @@ export function createRenderer3D(el, world) {
     ring.visible = !!o;
     if (o) ring.position.set(o.x + 0.5, 0.03, o.y + 0.5);
 
-    // カメラ。固定の斜め見下ろし。縦持ちのときは角度を立てる
+    /* カメラ。
+       ★ 数字を手で決めない。**部屋の幅が画角に収まる距離**を毎フレーム計算する。
+         こうすると、窓の大きさが変わっても「部屋がまるごと見える」が保たれる。
+         横持ちでは部屋が丸ごと入るので、視点はほとんど動かない（箱庭の見え方）。
+         縦持ちでは入りきらないので、入る範囲だけ人を追う。 */
     if (me && me.x !== null) {
-      const portrait = renderer.domElement.clientHeight > renderer.domElement.clientWidth;
-      // 顔が読める距離まで寄せる。広く見せるより、誰が居るか分かるほうを取る
-      const h = portrait ? 10.6 : 8.0, d = portrait ? 4.6 : 6.8;
-      // ★ 部屋の端では追うのをやめる。
-      //   端まで追うと画面の半分が壁になり、手前の人の名札だけが巨大に見える
-      const mx = portrait ? 3.5 : 6.0, mz = 4.0;
-      const cx = clamp(me.x, Math.min(mx, W / 2), Math.max(W - mx, W / 2));
-      const cz = clamp(me.y, Math.min(mz, H / 2), Math.max(H - mz * 0.6, H / 2));
-      target.set(cx, 0, cz);
+      const halfV = camera.fov * Math.PI / 360;
+      const tanH = Math.tan(halfV) * camera.aspect;
+      // 壁の外側まで少し余白を取る。近すぎると部屋が窮屈に、遠すぎると人が読めない
+      // 幅がちょうど入る距離。ただし**部屋の奥行きが画面を埋める**ところまで。
+      // 幅だけを見て引くと、縦持ちでは画面の下半分が部屋の外になる
+      const fitW = (W / 2 + 1.4) / tanH;
+      const fillD = (H / 2 + 0.6) * Math.sin(PITCH) / Math.tan(halfV);
+      const dist = clamp(Math.min(fitW, fillD), 13, 27);
+      const h = dist * Math.sin(PITCH), d = dist * Math.cos(PITCH);
+      // いま画面に入る広さ。これが部屋より広ければ、追う必要はない
+      const vw = dist * tanH;
+      const vd = dist * Math.tan(halfV) / Math.sin(PITCH);
+      const cx = clamp(me.x, Math.min(vw, W / 2), Math.max(W - vw, W / 2));
+      const cz = clamp(me.y, Math.min(vd, H / 2), Math.max(H - vd, H / 2));
+      // ★ 注視点を少し手前に置く。真ん中を見ると、遠近のぶん手前が詰まって
+      //   部屋の手前側（ラウンジ）が画面の下で切れる
+      target.set(cx, 0.55, cz + 0.9);
       const want = new THREE.Vector3(cx, h, cz + d);
       if (!camReady) { camera.position.copy(want); camReady = true; }
-      else camera.position.lerp(want, 0.12);
+      else camera.position.lerp(want, 0.10);
       camera.lookAt(target);
     }
     renderer.render(scene, camera);
@@ -339,8 +322,12 @@ export function createRenderer3D(el, world) {
   return {
     kind: '3d',
     render, resize, pick,
+    // ★ カメラの値も返す。画の不具合は「どこから見ているか」が分からないと追えない
     info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles,
-                   shadows: shadows.count }),
+                   shadows: shadows.count,
+                   cam: camera.position.toArray().map(v => +v.toFixed(2)),
+                   at: target.toArray().map(v => +v.toFixed(2)),
+                   fov: camera.fov, aspect: +camera.aspect.toFixed(3) }),
     dispose() {
       for (const av of avatars.values()) drop(av);
       gradient.dispose();

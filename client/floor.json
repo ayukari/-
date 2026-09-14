@@ -2,121 +2,441 @@
  "id": "office",
  "name": "プロダクト開発の部屋",
  "spawn": {
-  "x": 12.5,
-  "y": 8.5
+  "x": 10.5,
+  "y": 6.5
  },
  "grid": {
-  "width": 24,
-  "height": 16,
+  "width": 20,
+  "height": 14,
   "blocked": [
    [
-    9,
-    4
+    0,
+    0
    ],
    [
-    9,
-    5
+    0,
+    13
    ],
    [
-    10,
-    4
+    1,
+    0
    ],
    [
-    10,
-    5
-   ],
-   [
-    11,
-    4
-   ],
-   [
-    11,
-    5
-   ],
-   [
-    9,
-    10
-   ],
-   [
-    9,
-    11
-   ],
-   [
-    10,
-    10
-   ],
-   [
-    10,
-    11
-   ],
-   [
-    11,
-    10
-   ],
-   [
-    11,
-    11
+    1,
+    13
    ],
    [
     2,
-    2
+    0
    ],
    [
     2,
-    3
+    13
    ],
    [
-    2,
-    4
+    3,
+    0
    ],
    [
-    4,
-    2
-   ],
-   [
-    4,
-    3
+    3,
+    13
    ],
    [
     4,
-    4
+    0
+   ],
+   [
+    4,
+    13
+   ],
+   [
+    5,
+    0
+   ],
+   [
+    5,
+    13
    ],
    [
     6,
-    2
+    0
    ],
    [
     6,
-    3
+    13
    ],
    [
-    6,
-    4
+    7,
+    0
+   ],
+   [
+    7,
+    13
+   ],
+   [
+    8,
+    0
+   ],
+   [
+    8,
+    13
+   ],
+   [
+    9,
+    0
+   ],
+   [
+    9,
+    13
+   ],
+   [
+    10,
+    0
+   ],
+   [
+    10,
+    13
+   ],
+   [
+    11,
+    0
+   ],
+   [
+    11,
+    13
+   ],
+   [
+    12,
+    0
+   ],
+   [
+    12,
+    13
+   ],
+   [
+    13,
+    0
+   ],
+   [
+    13,
+    13
+   ],
+   [
+    14,
+    0
+   ],
+   [
+    14,
+    13
+   ],
+   [
+    15,
+    0
+   ],
+   [
+    15,
+    13
+   ],
+   [
+    16,
+    0
+   ],
+   [
+    16,
+    13
    ],
    [
     17,
-    9
+    0
+   ],
+   [
+    17,
+    13
    ],
    [
     18,
+    0
+   ],
+   [
+    18,
+    13
+   ],
+   [
+    19,
+    0
+   ],
+   [
+    19,
+    13
+   ],
+   [
+    0,
+    1
+   ],
+   [
+    19,
+    1
+   ],
+   [
+    0,
+    2
+   ],
+   [
+    19,
+    2
+   ],
+   [
+    0,
+    3
+   ],
+   [
+    19,
+    3
+   ],
+   [
+    0,
+    4
+   ],
+   [
+    19,
+    4
+   ],
+   [
+    0,
+    5
+   ],
+   [
+    19,
+    5
+   ],
+   [
+    0,
+    6
+   ],
+   [
+    19,
+    6
+   ],
+   [
+    0,
+    7
+   ],
+   [
+    19,
+    7
+   ],
+   [
+    0,
+    8
+   ],
+   [
+    19,
+    8
+   ],
+   [
+    0,
     9
    ],
    [
-    20,
+    19,
     9
    ],
    [
-    21,
-    9
+    0,
+    10
+   ],
+   [
+    19,
+    10
+   ],
+   [
+    0,
+    11
+   ],
+   [
+    19,
+    11
+   ],
+   [
+    0,
+    12
+   ],
+   [
+    19,
+    12
+   ],
+   [
+    4,
+    1
+   ],
+   [
+    5,
+    1
+   ],
+   [
+    6,
+    1
+   ],
+   [
+    18,
+    1
+   ],
+   [
+    1,
+    3
+   ],
+   [
+    1,
+    5
+   ],
+   [
+    14,
+    3
+   ],
+   [
+    15,
+    3
+   ],
+   [
+    16,
+    3
+   ],
+   [
+    17,
+    3
+   ],
+   [
+    12,
+    3
+   ],
+   [
+    12,
+    4
+   ],
+   [
+    6,
+    5
+   ],
+   [
+    7,
+    5
+   ],
+   [
+    8,
+    5
+   ],
+   [
+    9,
+    5
+   ],
+   [
+    6,
+    7
+   ],
+   [
+    7,
+    7
+   ],
+   [
+    8,
+    7
+   ],
+   [
+    9,
+    7
+   ],
+   [
+    11,
+    5
+   ],
+   [
+    1,
+    8
+   ],
+   [
+    2,
+    8
+   ],
+   [
+    3,
+    8
+   ],
+   [
+    4,
+    8
+   ],
+   [
+    2,
+    11
+   ],
+   [
+    3,
+    11
+   ],
+   [
+    1,
+    12
+   ],
+   [
+    5,
+    12
+   ],
+   [
+    4,
+    12
+   ],
+   [
+    12,
+    10
+   ],
+   [
+    13,
+    10
+   ],
+   [
+    15,
+    10
+   ],
+   [
+    11,
+    12
+   ],
+   [
+    18,
+    8
+   ],
+   [
+    10,
+    10
+   ],
+   [
+    9,
+    12
+   ],
+   [
+    8,
+    10
+   ],
+   [
+    17,
+    10
+   ],
+   [
+    16,
+    8
+   ],
+   [
+    11,
+    8
    ]
   ]
  },
  "areas": [
   {
    "id": "meet",
-   "x": 15,
+   "x": 12,
    "y": 1,
-   "w": 8,
+   "w": 7,
    "h": 6,
    "kind": "MEETING",
    "name": "会議室A"
@@ -124,134 +444,708 @@
   {
    "id": "focus",
    "x": 1,
-   "y": 10,
-   "w": 6,
-   "h": 5,
+   "y": 9,
+   "w": 5,
+   "h": 4,
    "kind": "FOCUS",
    "name": "集中ルーム"
   }
  ],
  "objects": [
   {
-   "id": "t1a",
+   "id": "window1",
+   "kind": "window",
+   "x": 2,
+   "y": 1,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "window2",
+   "kind": "window",
+   "x": 7,
+   "y": 1,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "window3",
+   "kind": "window",
+   "x": 11,
+   "y": 1,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "clock4",
+   "kind": "clock",
+   "x": 9,
+   "y": 1,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "counter5",
+   "kind": "counter",
+   "x": 4,
+   "y": 1,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "cooler6",
+   "kind": "cooler",
+   "x": 6,
+   "y": 1,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "plant7",
+   "kind": "plant",
+   "x": 18,
+   "y": 1,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "rack8",
+   "kind": "rack",
+   "x": 1,
+   "y": 3,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "crate9",
+   "kind": "crate",
+   "x": 1,
+   "y": 5,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "desk10",
+   "kind": "desk",
+   "x": 14,
+   "y": 3,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "desk11",
+   "kind": "desk",
+   "x": 16,
+   "y": 3,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "s_14_2",
+   "kind": "seat",
+   "x": 14,
+   "y": 2,
+   "rot": 0,
+   "data": {
+    "table": "meet"
+   }
+  },
+  {
+   "id": "s_14_4",
+   "kind": "seat",
+   "x": 14,
+   "y": 4,
+   "rot": 0,
+   "data": {
+    "table": "meet"
+   }
+  },
+  {
+   "id": "s_15_2",
+   "kind": "seat",
+   "x": 15,
+   "y": 2,
+   "rot": 0,
+   "data": {
+    "table": "meet"
+   }
+  },
+  {
+   "id": "s_15_4",
+   "kind": "seat",
+   "x": 15,
+   "y": 4,
+   "rot": 0,
+   "data": {
+    "table": "meet"
+   }
+  },
+  {
+   "id": "s_16_2",
+   "kind": "seat",
+   "x": 16,
+   "y": 2,
+   "rot": 0,
+   "data": {
+    "table": "meet"
+   }
+  },
+  {
+   "id": "s_16_4",
+   "kind": "seat",
+   "x": 16,
+   "y": 4,
+   "rot": 0,
+   "data": {
+    "table": "meet"
+   }
+  },
+  {
+   "id": "s_17_2",
+   "kind": "seat",
+   "x": 17,
+   "y": 2,
+   "rot": 0,
+   "data": {
+    "table": "meet"
+   }
+  },
+  {
+   "id": "s_17_4",
+   "kind": "seat",
+   "x": 17,
+   "y": 4,
+   "rot": 0,
+   "data": {
+    "table": "meet"
+   }
+  },
+  {
+   "id": "rugBig12",
+   "kind": "rugBig",
+   "x": 15,
+   "y": 3,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "whiteboard13",
+   "kind": "whiteboard",
+   "x": 15,
+   "y": 1,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "poster14",
+   "kind": "poster",
+   "x": 18,
+   "y": 5,
+   "rot": -90,
+   "data": {}
+  },
+  {
+   "id": "partition15",
+   "kind": "partition",
+   "x": 12,
+   "y": 3,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "partition16",
+   "kind": "partition",
+   "x": 12,
+   "y": 4,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "desk17",
+   "kind": "desk",
+   "x": 6,
+   "y": 5,
+   "rot": 180,
+   "data": {}
+  },
+  {
+   "id": "desk18",
+   "kind": "desk",
+   "x": 8,
+   "y": 5,
+   "rot": 180,
+   "data": {}
+  },
+  {
+   "id": "desk19",
+   "kind": "desk",
+   "x": 6,
+   "y": 7,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "desk20",
+   "kind": "desk",
+   "x": 8,
+   "y": 7,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "s_6_4",
+   "kind": "seat",
+   "x": 6,
+   "y": 4,
+   "rot": 0,
+   "data": {
+    "table": "t1"
+   }
+  },
+  {
+   "id": "s_6_6",
+   "kind": "seat",
+   "x": 6,
+   "y": 6,
+   "rot": 0,
+   "data": {
+    "table": "t1"
+   }
+  },
+  {
+   "id": "s_6_8",
+   "kind": "seat",
+   "x": 6,
+   "y": 8,
+   "rot": 0,
+   "data": {
+    "table": "t2"
+   }
+  },
+  {
+   "id": "s_7_4",
+   "kind": "seat",
+   "x": 7,
+   "y": 4,
+   "rot": 0,
+   "data": {
+    "table": "t1"
+   }
+  },
+  {
+   "id": "s_7_6",
+   "kind": "seat",
+   "x": 7,
+   "y": 6,
+   "rot": 0,
+   "data": {
+    "table": "t1"
+   }
+  },
+  {
+   "id": "s_7_8",
+   "kind": "seat",
+   "x": 7,
+   "y": 8,
+   "rot": 0,
+   "data": {
+    "table": "t2"
+   }
+  },
+  {
+   "id": "s_8_4",
    "kind": "seat",
    "x": 8,
    "y": 4,
+   "rot": 0,
    "data": {
     "table": "t1"
    }
   },
   {
-   "id": "t1b",
+   "id": "s_8_6",
    "kind": "seat",
    "x": 8,
-   "y": 5,
+   "y": 6,
+   "rot": 0,
    "data": {
     "table": "t1"
    }
   },
   {
-   "id": "t1c",
+   "id": "s_8_8",
    "kind": "seat",
-   "x": 12,
+   "x": 8,
+   "y": 8,
+   "rot": 0,
+   "data": {
+    "table": "t2"
+   }
+  },
+  {
+   "id": "s_9_4",
+   "kind": "seat",
+   "x": 9,
    "y": 4,
+   "rot": 0,
    "data": {
     "table": "t1"
    }
   },
   {
-   "id": "t1d",
+   "id": "s_9_6",
    "kind": "seat",
-   "x": 12,
+   "x": 9,
+   "y": 6,
+   "rot": 0,
+   "data": {
+    "table": "t1"
+   }
+  },
+  {
+   "id": "s_9_8",
+   "kind": "seat",
+   "x": 9,
+   "y": 8,
+   "rot": 0,
+   "data": {
+    "table": "t2"
+   }
+  },
+  {
+   "id": "monitor21",
+   "kind": "monitor",
+   "x": 6,
    "y": 5,
-   "data": {
-    "table": "t1"
-   }
+   "rot": 180,
+   "data": {}
   },
   {
-   "id": "t2a",
-   "kind": "seat",
+   "id": "monitor22",
+   "kind": "monitor",
+   "x": 9,
+   "y": 5,
+   "rot": 180,
+   "data": {}
+  },
+  {
+   "id": "laptop23",
+   "kind": "laptop",
+   "x": 7,
+   "y": 7,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "mug24",
+   "kind": "mug",
    "x": 8,
-   "y": 10,
-   "data": {
-    "table": "t2"
-   }
+   "y": 7,
+   "rot": 0,
+   "data": {}
   },
   {
-   "id": "t2b",
-   "kind": "seat",
-   "x": 8,
-   "y": 11,
-   "data": {
-    "table": "t2"
-   }
+   "id": "plantS25",
+   "kind": "plantS",
+   "x": 9,
+   "y": 7,
+   "rot": 0,
+   "data": {}
   },
   {
-   "id": "t2c",
-   "kind": "seat",
-   "x": 12,
-   "y": 10,
-   "data": {
-    "table": "t2"
-   }
+   "id": "books26",
+   "kind": "books",
+   "x": 6,
+   "y": 7,
+   "rot": 0,
+   "data": {}
   },
   {
-   "id": "t2d",
-   "kind": "seat",
-   "x": 12,
-   "y": 11,
-   "data": {
-    "table": "t2"
-   }
+   "id": "cabinet27",
+   "kind": "cabinet",
+   "x": 11,
+   "y": 5,
+   "rot": 0,
+   "data": {}
   },
   {
-   "id": "note1",
-   "kind": "note",
+   "id": "plantS28",
+   "kind": "plantS",
+   "x": 11,
+   "y": 5,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "partition29",
+   "kind": "partition",
+   "x": 1,
+   "y": 8,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "partition30",
+   "kind": "partition",
+   "x": 2,
+   "y": 8,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "partition31",
+   "kind": "partition",
    "x": 3,
    "y": 8,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "partition32",
+   "kind": "partition",
+   "x": 4,
+   "y": 8,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "desk33",
+   "kind": "desk",
+   "x": 2,
+   "y": 11,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "s_2_10",
+   "kind": "seat",
+   "x": 2,
+   "y": 10,
+   "rot": 0,
+   "data": {
+    "table": "focus"
+   }
+  },
+  {
+   "id": "s_3_10",
+   "kind": "seat",
+   "x": 3,
+   "y": 10,
+   "rot": 0,
+   "data": {
+    "table": "focus"
+   }
+  },
+  {
+   "id": "rug34",
+   "kind": "rug",
+   "x": 2,
+   "y": 11,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "monitor35",
+   "kind": "monitor",
+   "x": 2,
+   "y": 11,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "shelf36",
+   "kind": "shelf",
+   "x": 1,
+   "y": 12,
+   "rot": 90,
+   "data": {}
+  },
+  {
+   "id": "plant37",
+   "kind": "plant",
+   "x": 5,
+   "y": 12,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "note38",
+   "kind": "note",
+   "x": 5,
+   "y": 9,
+   "rot": 0,
    "data": {
     "title": "チェックインの時間"
    }
   },
   {
-   "id": "board1",
-   "kind": "board",
-   "x": 20,
+   "id": "beanbag39",
+   "kind": "beanbag",
+   "x": 4,
    "y": 12,
-   "data": {
-    "title": "チームの今週"
-   }
+   "rot": 0,
+   "data": {}
   },
   {
-   "id": "sign1",
-   "kind": "sign",
+   "id": "cushion40",
+   "kind": "cushion",
+   "x": 1,
+   "y": 10,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "books41",
+   "kind": "books",
+   "x": 1,
+   "y": 11,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "rug42",
+   "kind": "rug",
    "x": 13,
-   "y": 14,
+   "y": 11,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "sofa43",
+   "kind": "sofa",
+   "x": 12,
+   "y": 10,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "lowTable44",
+   "kind": "lowTable",
+   "x": 13,
+   "y": 12,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "lamp45",
+   "kind": "lamp",
+   "x": 15,
+   "y": 10,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "plant46",
+   "kind": "plant",
+   "x": 11,
+   "y": 12,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "board47",
+   "kind": "board",
+   "x": 18,
+   "y": 11,
+   "rot": -90,
+   "data": {}
+  },
+  {
+   "id": "sign48",
+   "kind": "sign",
+   "x": 7,
+   "y": 11,
+   "rot": 0,
    "data": {
     "title": "案内"
    }
   },
   {
-   "id": "wb1",
-   "kind": "whiteboard",
+   "id": "shelf49",
+   "kind": "shelf",
    "x": 18,
-   "y": 2,
-   "data": {
-    "boardId": "office-a"
-   }
-  },
-  {
-   "id": "pl1",
-   "kind": "plant",
-   "x": 22,
-   "y": 2,
+   "y": 8,
+   "rot": -90,
    "data": {}
   },
   {
-   "id": "pl2",
+   "id": "pendant50",
+   "kind": "pendant",
+   "x": 13,
+   "y": 11,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "cushion51",
+   "kind": "cushion",
+   "x": 15,
+   "y": 12,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "crate52",
+   "kind": "crate",
+   "x": 10,
+   "y": 10,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "lamp53",
+   "kind": "lamp",
+   "x": 9,
+   "y": 12,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "plant54",
    "kind": "plant",
-   "x": 2,
-   "y": 6,
+   "x": 8,
+   "y": 10,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "beanbag55",
+   "kind": "beanbag",
+   "x": 17,
+   "y": 10,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "cushion56",
+   "kind": "cushion",
+   "x": 17,
+   "y": 12,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "books57",
+   "kind": "books",
+   "x": 16,
+   "y": 12,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "plant58",
+   "kind": "plant",
+   "x": 16,
+   "y": 8,
+   "rot": 0,
+   "data": {}
+  },
+  {
+   "id": "crate59",
+   "kind": "crate",
+   "x": 11,
+   "y": 8,
+   "rot": 0,
    "data": {}
   }
  ]

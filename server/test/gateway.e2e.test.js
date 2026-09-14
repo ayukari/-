@@ -117,18 +117,18 @@ test('席は「その席のタイルの上にいる」ときだけ座れる', as
   const a = connect('e2eD', 'ひなた');
   await a.hello();
   await waitFor(a, m => m.t === 'tick');
-  // スポーン(12.5,8.5)から席 t1c(12,4) までは手が届かない。まず上に歩く
-  a.send({ t: 'sit', seatId: 't1c' });
+  // スポーン(10.5,6.5)の隣に席 s_9_6(9,6) がある。手は届くが、乗っていないので断られる
+  a.send({ t: 'sit', seatId: 's_9_6' });
   assert.equal((await waitFor(a, m => m.t === 'error')).code, 'denied');
 
-  await walkUntil(a, 0, -1, c => Math.floor(c.pos.get(c.self).y) === 4);
+  await walkUntil(a, -1, 0, c => Math.floor(c.pos.get(c.self).x) === 9);
   const p = a.pos.get(a.self);
-  assert.equal(Math.floor(p.x), 12);
-  assert.equal(Math.floor(p.y), 4, '席のタイルに乗っていない: ' + p.y);
+  assert.equal(Math.floor(p.x), 9, '席のタイルに乗っていない: ' + p.x);
+  assert.equal(Math.floor(p.y), 6);
   a.got.length = 0;
-  a.send({ t: 'sit', seatId: 't1c' });
+  a.send({ t: 'sit', seatId: 's_9_6' });
   const seat = await waitFor(a, m => m.t === 'seat');
-  assert.equal(seat.seatId, 't1c');
+  assert.equal(seat.seatId, 's_9_6');
   a.ws.close();
 });
 
