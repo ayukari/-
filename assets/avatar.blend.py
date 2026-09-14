@@ -71,20 +71,35 @@ def face_yaw(x, z):
     return math.degrees(math.asin(max(-0.99, min(0.99, x / (k * HEAD_RX)))))
 
 
-def tag(o, part, color=None):
+def tag(o, part, color=None, shade=True):
+    """部位IDと、焼き込みの陰を アルファ1つ に入れる。
+
+    ★ アルファ = (部位ID + 0.10 + 0.85 × 明るさ) / PART_N
+
+      整数部が部位ID、小数部が明るさ（0=暗い 1=明るい）。
+      クライアントはこれを読んで、人ごとの色に陰を掛ける。**データは1バイトも増えない。**
+
+    陰の付け方は「体の下にあるほど暗い」。床に近いほど光が回らない、というだけの
+    1本の勾配で、のっぺりした低ポリに奥行きが出る。
+    """
     me = o.data
     col = me.color_attributes.get('Col') or me.color_attributes.new('Col', 'FLOAT_COLOR', 'POINT')
     r, g, b = srgb(color or DEFAULT[part])
-    a = (part + 0.5) / PART_N
-    for i in range(len(me.vertices)):
-        col.data[i].color = (r, g, b, a)
+
+    for i, v in enumerate(me.vertices):
+        # ★ 勾配は「体の全高」で1本だけ引く。
+        #   パーツごとに引くと、肘・肩・裾の境目で明るさが飛んで段ができる
+        #   （最初そうして、腕に輪が入った）。
+        #   顔の部品は勾配をかけると汚れるので一律にする。
+        k = 0.92 if not shade else min(1.0, max(0.0, v.co.z / H)) ** 0.8
+        col.data[i].color = (r, g, b, (part + 0.10 + 0.85 * k) / PART_N)
     return o
 
 
-def piece(o, part, bone, color=None):
-    """1部品を仕上げる。座標を焼き、色（＝部位ID）を入れ、1本の骨に結びつける"""
+def piece(o, part, bone, color=None, shade=True):
+    """1部品を仕上げる。座標を焼き、色（＝部位ID＋陰）を入れ、1本の骨に結びつける"""
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-    tag(o, part, color)
+    tag(o, part, color, shade)
     o.vertex_groups.new(name=bone).add(range(len(o.data.vertices)), 1.0, 'REPLACE')
     return o
 
@@ -177,23 +192,28 @@ def build_base(w):
     for s in (1, -1):
         x = s * EX
         yaw = face_yaw(x, EYE_Z)
-        ps.append(piece(disc(0.040, (x, face_y(x, EYE_Z, 0.006), EYE_Z),
-                             (0.78, 1.06, 1), 10, tilt=yaw), EYE, 'head'))
-        ps.append(piece(disc(0.0125, (x + s * 0.011, face_y(x, EYE_Z, 0.013), EYE_Z + 0.014),
-                             (1, 1, 1), 6, tilt=yaw), WHITE, 'head'))
+        # 白目 → 虹彩 → ハイライト の3枚。寄ったときの印象はここで決まる
+        ps.append(piece(disc(0.044, (x, face_y(x, EYE_Z, 0.005), EYE_Z),
+                             (0.80, 1.08, 1), 10, tilt=yaw), WHITE, 'head', shade=False))
+        ps.append(piece(disc(0.036, (x, face_y(x, EYE_Z, 0.009), EYE_Z - 0.003),
+                             (0.84, 1.05, 1), 10, tilt=yaw), EYE, 'head', shade=False))
+        ps.append(piece(disc(0.0135, (x + s * 0.010, face_y(x, EYE_Z, 0.014), EYE_Z + 0.016),
+                             (1, 1, 1), 6, tilt=yaw), WHITE, 'head', shade=False))
         ps.append(piece(disc(0.028, (x, face_y(x, BROW_Z, 0.005), BROW_Z),
-                             (1.25, 0.15, 1), 4, tilt=face_yaw(x, BROW_Z)), HAIR, 'head'))
+                             (1.25, 0.15, 1), 4, tilt=face_yaw(x, BROW_Z)), HAIR, 'head', shade=False))
         bx = s * 0.118
         ps.append(piece(disc(0.028, (bx, face_y(bx, BLUSH_Z, 0.004), BLUSH_Z),
-                             (1.0, 0.50, 1), 6, tilt=face_yaw(bx, BLUSH_Z)), BLUSH, 'head'))
+                             (1.0, 0.50, 1), 6, tilt=face_yaw(bx, BLUSH_Z)), BLUSH, 'head', shade=False))
     ps.append(piece(disc(0.018, (0, face_y(0, MOUTH_Z, 0.004), MOUTH_Z), (1.2, 0.55, 1), 6),
-                    MOUTH, 'head'))
+                    MOUTH, 'head', shade=False))
 
     # --- 胴（服の下。細め） ---
     # 胴と腰は必ずトップス／ボトムスに隠れる。隙間を埋めるだけの最小形にする
-    ps.append(piece(cone(0.138 * w, 0.166 * w, CHEST_Z - HIP_Z + 0.02,
+    # ★ 服より十分に細くする。近いと、角の数が違うせいで素体の角が服から突き出る
+    #   （タンクトップで胸に茶色い筋が出ていた）
+    ps.append(piece(cone(0.118 * w, 0.140 * w, CHEST_Z - HIP_Z + 0.02,
                          (0, 0, (HIP_Z + CHEST_Z) / 2), 6), SKIN, 'chest'))
-    ps.append(piece(sphere(0.140 * w, (0, 0, HIP_Z + 0.015), (1, 0.85, 0.8), 6, 4),
+    ps.append(piece(sphere(0.124 * w, (0, 0, HIP_Z + 0.015), (1, 0.85, 0.8), 6, 4),
                     SKIN, 'hips'))
 
     # --- 腕 ---
@@ -450,7 +470,7 @@ BOTTOM_DEFS = [
     ('shorts',     0.30, 1.08, 'pants',  None),
     ('crop',       0.78, 1.02, 'pants',  None),
     ('wide',       1.00, 1.34, 'pants',  None),
-    ('legging',    1.00, 0.90, 'pants',  None),
+    ('legging',    1.00, 0.98, 'pants',  None),
     ('skirt',      0.42, 1.00, 'skirt',  None),
     ('longskirt',  0.80, 1.00, 'skirt',  None),
     ('cargo',      1.00, 1.12, 'pants',  'pocket'),
@@ -553,10 +573,11 @@ def build_acc(i, w):
                                    (0.55, 1, 1), 8, 5), ACC, 'head'))
 
     elif kind == 'cap':
-        ps.append(piece(sphere(HEAD_R * 1.24, (0, 0.010, HEAD_Z + 0.100), (1, 1, 0.70), 10, 5),
+        # 頭に乗る丸い冠 + 前に出るつば。平たくすると笠、大きくすると被り物になる
+        ps.append(piece(sphere(HEAD_R * 1.14, (0, 0.014, HEAD_Z + 0.088), (1, 1, 0.86), 10, 6),
                         ACC, 'head'))
-        ps.append(piece(box((0, FRONT * 0.238, HEAD_Z + 0.152), (0.250, 0.205, 0.026),
-                            rot=(-5, 0, 0)), ACC, 'head'))
+        ps.append(piece(box((0, FRONT * 0.205, HEAD_Z + 0.068), (0.232, 0.185, 0.022),
+                            rot=(-7, 0, 0)), ACC, 'head'))
 
     elif kind == 'beanie':
         ps.append(piece(sphere(HEAD_R * 1.25, (0, 0.006, HEAD_Z + 0.104), (1, 1, 0.84), 10, 5),

@@ -44,6 +44,7 @@ a{color:var(--muted);font-size:12px}
 <script type="module">
 import * as THREE from 'three';
 import { loadAvatars, makeAvatar, toonGradient, lookFor, VARIETY } from '/src/avatar.js';
+import { blobGeometry } from '/src/render3d.js';
 
 const el = document.getElementById('stage');
 const dark = matchMedia('(prefers-color-scheme: dark)').matches;
@@ -59,6 +60,11 @@ const sun = new THREE.DirectionalLight(0xfff4e2, 0.75); sun.position.set(3, 6, 4
 const floor = new THREE.Mesh(new THREE.CircleGeometry(1.4, 40),
   new THREE.MeshLambertMaterial({ color: dark ? 0x4a4237 : 0xd8cdbc }));
 floor.rotation.x = -Math.PI / 2; scene.add(floor);
+// 足元の影。ゲーム画面と同じものを使う
+const blob = new THREE.Mesh(blobGeometry(), new THREE.MeshBasicMaterial({
+  vertexColors: true, transparent: true, depthWrite: false }));
+blob.scale.set(0.40, 1, 0.33); blob.position.y = 0.012; blob.renderOrder = 1;
+scene.add(blob);
 
 const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 60);
 let yaw = 0.35, pitch = 0.22, dist = 3.4, spin = true, look_ = 0.85;

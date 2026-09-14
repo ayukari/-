@@ -43,6 +43,7 @@ a{color:var(--muted);font-size:12px;margin-left:auto}
 <script type="module">
 import * as THREE from 'three';
 import { loadAvatars, makeAvatar, toonGradient, lookFor, VARIETY } from '/src/avatar.js';
+import { blobGeometry } from '/src/render3d.js';
 
 const el = document.getElementById('stage');
 const dark = matchMedia('(prefers-color-scheme: dark)').matches;
@@ -62,11 +63,14 @@ const packs = await loadAvatars();
 
 /** 種類数（avatar.blend.py と対応） */
 const COUNT = { hair: 14, top: 10, bottom: 8, shoe: 5, acc: 8 };
-let rigs = [], cols = 10, animate = false;
+let rigs = [], blobs = [], cols = 10, animate = false;
+const blobGeo = blobGeometry();
+const blobMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
 
 function clear() {
   for (const r of rigs) { scene.remove(r.root); r.dispose(); }
-  rigs = [];
+  for (const b of blobs) scene.remove(b);
+  rigs = []; blobs = [];
 }
 
 const CELL_W = 1.00, CELL_H = 2.00;
@@ -77,6 +81,14 @@ function place(look, i) {
   const row = Math.floor(i / cols), col = i % cols;
   rig.root.position.set((col - (cols - 1) / 2) * CELL_W, -row * CELL_H, 0);
   scene.add(rig.root);                      // モデルは +Z が正面。カメラは +Z 側にいる
+  // 足元の影。真正面から見ているので、円板を立てて薄い楕円に見せる
+  const blob = new THREE.Mesh(blobGeo, blobMat);
+  blob.rotation.x = Math.PI / 2;
+  blob.scale.set(0.42, 1, 0.14);
+  blob.position.copy(rig.root.position).add(new THREE.Vector3(0, 0.01, 0));
+  blob.renderOrder = 1;
+  scene.add(blob);
+  blobs.push(blob);
   rigs.push(rig);
   return rig;
 }

@@ -142,7 +142,9 @@ function checkJointOrder(common, bodies) {
 
 /** 段階的な陰。ポストエフェクトを使わずにアニメ寄りの見えにする（02 §6.3） */
 export function toonGradient() {
-  const steps = new Uint8Array([168, 206, 236, 255]);   // 陰を浅くする。強い影は「Chill」に合わない
+  // 陰は頂点カラーに焼いてあるので、ここは段差を付けるだけでよい。
+  // 強い影は「Chill」に合わない
+  const steps = new Uint8Array([186, 214, 238, 255]);
   const t = new THREE.DataTexture(
     new Uint8Array([...steps].flatMap(v => [v, v, v, 255])), steps.length, 1, THREE.RGBAFormat);
   t.needsUpdate = true;
@@ -239,8 +241,16 @@ function prepare(geometry) {
   return g;
 }
 
+/** 焼き込みの陰がいちばん暗いところ（足元）の明るさ。avatar.blend.py と対の値 */
+const SHADE_MIN = 0.80;
+
 /**
- * COLOR_0 のアルファに入っている部位IDを見て RGB を塗り直す。
+ * COLOR_0 のアルファに入っている「部位ID + 陰の強さ」を読んで RGB を塗り直す。
+ *
+ *   アルファ × 16 → 整数部が部位ID、小数部が明るさ
+ *
+ * ライトだけでは低ポリは平らに見える。焼き込んだ陰を掛けることで、
+ * 服の裾・腕の内側・あごの下が落ちて立体に見える。追加のデータは要らない。
  *
  * ★ 生成時は u16、最適化後は u8 で入っている。どちらでも読めるように
  *   getX/getW を使う（正規化の解除は three がやる）。
@@ -252,11 +262,15 @@ function recolor(geometry, palette) {
   const out = new Float32Array(src.count * 3);
   const c = new THREE.Color();
   for (let i = 0; i < src.count; i++) {
-    const hex = palette[Math.floor(src.getW(i) * PART_N)];
+    const a = src.getW(i) * PART_N;
+    const part = Math.floor(a);
+    const hex = palette[part];
     // Color.set() は sRGB → 作業色空間（線形）の変換を既に行う。
     // ここで convertSRGBToLinear を重ねると2回かかって真っ黒になる
     if (hex) c.set(hex);
     else c.setRGB(src.getX(i), src.getY(i), src.getZ(i));
+    const lit = Math.min(1, Math.max(0, (a - part - 0.10) / 0.85));
+    c.multiplyScalar(SHADE_MIN + (1 - SHADE_MIN) * lit);
     out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
   }
   geometry.setAttribute('color', new THREE.BufferAttribute(out, 3));

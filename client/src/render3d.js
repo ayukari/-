@@ -41,10 +41,17 @@ export function createRenderer3D(el, world) {
   scene.background = new THREE.Color(PAL.sky);
   scene.fog = new THREE.Fog(PAL.sky, 26, 46);
 
-  scene.add(new THREE.HemisphereLight(0xffffff, PAL.ground, 1.45));
-  const sun = new THREE.DirectionalLight(0xfff4e2, 0.75);
-  sun.position.set(6, 12, 4);
-  scene.add(sun);
+  // 3灯。動的な影は焼かない（02 §6.3）ので、光の当て方だけで立体を出す。
+  //   キー   … 上手前から。暖色
+  //   フィル … 半球光。下側は木の床からの照り返しを想定した色
+  //   リム   … 後ろから寒色。背景から輪郭を分けるのはこれが効く
+  scene.add(new THREE.HemisphereLight(0xFFF3E4, dark ? 0x1C222A : 0xC3A183, 1.00));
+  const key = new THREE.DirectionalLight(0xFFF1DA, 1.15);
+  key.position.set(5, 10, 4);
+  scene.add(key);
+  const rim = new THREE.DirectionalLight(0xBED4EC, 0.45);
+  rim.position.set(-5, 3.5, -7);
+  scene.add(rim);
 
   const camera = new THREE.PerspectiveCamera(44, 1, 0.5, 120);
 
@@ -115,6 +122,18 @@ export function createRenderer3D(el, world) {
     objMeshes.set(kind, { im, list });
   }
 
+  /* ---------------- 接地影（10 §2 の「ブロブシャドウ」） ----------------
+     動的な影は使わないが、足元に丸い影が無いと人が浮いて見える。
+     中心が濃く外周が透明な円板を、全員ぶん1つの InstancedMesh で描く = 1ドローコール */
+  const MAX_SHADOWS = 64;
+  const shadows = new THREE.InstancedMesh(blobGeometry(), new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, depthWrite: false,
+  }), MAX_SHADOWS);
+  shadows.count = 0;
+  shadows.frustumCulled = false;
+  shadows.renderOrder = 1;
+  scene.add(shadows);
+
   // 手の届くオブジェクトを示す輪
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.52, 24),
     new THREE.MeshBasicMaterial({ color: 0xc8873c, transparent: true, opacity: 0.85 }));
@@ -125,6 +144,7 @@ export function createRenderer3D(el, world) {
   /** entityId -> Av */
   const avatars = new Map();
   const gradient = toonGradient();
+  const shadowM = new THREE.Matrix4();
   let frame = 0;
 
   // モデルは後から届く。届くまでは簡易表示で動かし、届いたら差し替える。
@@ -219,6 +239,7 @@ export function createRenderer3D(el, world) {
         av.group.rotation.y = a.dir;
       }
       av.label.position.y = seat ? 1.52 : 1.92;
+      av.seated = !!seat;
 
       // 動いているかは位置の変化で決める。サーバは「歩いている」を送ってこない
       const speed = Math.hypot(a.x - av.px, a.y - av.py) / Math.max(dtSec, 1e-3);
@@ -243,6 +264,18 @@ export function createRenderer3D(el, world) {
     for (const [id, av] of avatars) {
       if (!world.actors.has(id)) { drop(av); avatars.delete(id); }
     }
+
+    // 接地影を全員ぶん置き直す
+    let ns = 0;
+    for (const av of avatars.values()) {
+      if (ns >= MAX_SHADOWS || !av.group.visible) continue;
+      const r = (av.seated ? 0.30 : 0.40) * (av.fade ?? 1);
+      shadowM.makeScale(r, 1, r * 0.82);
+      shadowM.setPosition(av.group.position.x, 0.012, av.group.position.z + 0.04);
+      shadows.setMatrixAt(ns++, shadowM);
+    }
+    shadows.count = ns;
+    shadows.instanceMatrix.needsUpdate = true;
 
     // いま行動の対象になっているものに輪をつける
     const o = world.actionable()?.object;
@@ -306,7 +339,8 @@ export function createRenderer3D(el, world) {
   return {
     kind: '3d',
     render, resize, pick,
-    info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
+    info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles,
+                   shadows: shadows.count }),
     dispose() {
       for (const av of avatars.values()) drop(av);
       gradient.dispose();
@@ -314,6 +348,34 @@ export function createRenderer3D(el, world) {
       renderer.domElement.remove();
     },
   };
+}
+
+/**
+ * 中心が濃く外周が透明な円板（接地影）。テクスチャを使わず頂点カラーのアルファで落とす。
+ * 中間のリングを1枚挟んで、落ち方を直線ではなくする（芯が締まって影らしくなる）
+ */
+export function blobGeometry(seg = 16) {
+  const RINGS = [[0.0, 0.40], [0.58, 0.26], [1.0, 0.0]];
+  const pos = [], col = [], idx = [];
+  for (const [r, a] of RINGS) {
+    if (r === 0) { pos.push(0, 0, 0); col.push(0, 0, 0, a); continue; }
+    for (let i = 0; i < seg; i++) {
+      const t = (i / seg) * Math.PI * 2;
+      pos.push(Math.cos(t) * r, 0, Math.sin(t) * r);
+      col.push(0, 0, 0, a);
+    }
+  }
+  // ★ 巻き方向は上（+Y）から見て反時計回り。逆にすると裏面として消える
+  for (let i = 0; i < seg; i++) idx.push(0, 1 + (i + 1) % seg, 1 + i);          // 中心の扇
+  for (let i = 0; i < seg; i++) {                                               // 外側の輪
+    const a = 1 + i, b = 1 + (i + 1) % seg, c = 1 + seg + i, d = 1 + seg + (i + 1) % seg;
+    idx.push(a, d, c, a, b, d);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  g.setIndex(idx);
+  return g;
 }
 
 function roundRect(c, x, y, w, h, r) {
