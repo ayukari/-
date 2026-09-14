@@ -104,10 +104,10 @@ function build() {
   rig.play(clip);
   mark();
   for (const key of Object.keys(NAMES)) document.getElementById(key).value = String(look[key]);
-  const over = rig.tris > 1900;   // server/test/assets.test.js と同じ値
+  const over = rig.tris > 3700;   // server/test/assets.test.js と同じ値
   document.getElementById('info').innerHTML = `
     <div>三角形 <b class="${over ? 'over' : ''}">${rig.tris.toLocaleString()}</b></div>
-    <div>上限（10 §4） <b>1,900</b></div>
+    <div>上限（10 §4） <b>3,700</b></div>
     <div>ドローコール／人 <b>1</b></div>
     <div>ボーン <b>18</b></div>
     <div>テクスチャ <b>0</b></div>

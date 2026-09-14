@@ -114,9 +114,16 @@ def sphere(r, loc, scale=(1, 1, 1), seg=10, ring=6):
     return o
 
 
-def cone(r1, r2, depth, loc, verts=8):
+def cone(r1, r2, depth, loc, verts=8, rot=(0, 0, 0)):
+    """円錐。r1 が下（-Z）、r2 が上（+Z）の半径。
+
+    ★ 毛束はここを取り違えやすい。**結び目のある上を太く**しないと、
+      先が太く根元がとがった刃物のような形になる。
+    """
     bpy.ops.mesh.primitive_cone_add(vertices=verts, radius1=r1, radius2=r2, depth=depth, location=loc)
-    return bpy.context.object
+    o = bpy.context.object
+    o.rotation_euler = tuple(D(v) for v in rot)
+    return o
 
 
 def box(loc, scale, rot=(0, 0, 0)):
@@ -407,19 +414,24 @@ def extra_hair(ps, kind):
     if kind is None:
         return
     if kind == 'pony':
-        ps.append(piece(sphere(HEAD_R * 0.40, (0, 0.195, HEAD_Z + 0.050), (0.85, 0.9, 0.92), 8, 5),
+        # 結び目は頭のうしろ、耳の高さ。上に付けると角のように見える
+        ps.append(piece(sphere(HEAD_R * 0.36, (0, 0.190, HEAD_Z - 0.015), (1.0, 0.85, 1.0), 8, 4),
                         HAIR, 'head'))
-        ps.append(piece(cone(HEAD_R * 0.30, HEAD_R * 0.09, 0.32, (0, 0.245, HEAD_Z - 0.115), 6),
-                        HAIR, 'head'))
+        # 尾。上（結び目）が太く先が細い。★ 短く・太くする。
+        #   細くて長いと、上から見る画角では尾ではなく1本の線に見える
+        ps.append(piece(cone(HEAD_R * 0.13, HEAD_R * 0.31, 0.21, (0, 0.223, HEAD_Z - 0.120), 8,
+                             rot=(14, 0, 0)), HAIR, 'head'))
     elif kind == 'sidetail':
-        ps.append(piece(cone(HEAD_R * 0.28, HEAD_R * 0.09, 0.30, (0.165, 0.115, HEAD_Z - 0.130), 6),
+        ps.append(piece(sphere(HEAD_R * 0.30, (0.145, 0.115, HEAD_Z - 0.020), (1.0, 0.85, 1.0), 8, 4),
                         HAIR, 'head'))
+        ps.append(piece(cone(HEAD_R * 0.12, HEAD_R * 0.27, 0.20, (0.172, 0.140, HEAD_Z - 0.125), 8,
+                             rot=(12, -12, 0)), HAIR, 'head'))
     elif kind == 'twin':
         for s in (1, -1):
-            ps.append(piece(sphere(HEAD_R * 0.26, (s * 0.185, 0.075, HEAD_Z + 0.060),
-                                   (0.9, 0.9, 0.9), 6, 4), HAIR, 'head'))
-            ps.append(piece(cone(HEAD_R * 0.24, HEAD_R * 0.08, 0.28, (s * 0.205, 0.095, HEAD_Z - 0.095), 6),
-                            HAIR, 'head'))
+            ps.append(piece(sphere(HEAD_R * 0.26, (s * 0.170, 0.085, HEAD_Z + 0.000),
+                                   (1.0, 0.85, 1.0), 8, 4), HAIR, 'head'))
+            ps.append(piece(cone(HEAD_R * 0.11, HEAD_R * 0.24, 0.19, (s * 0.196, 0.108, HEAD_Z - 0.100), 8,
+                                 rot=(12, -s * 14, 0)), HAIR, 'head'))
     elif kind == 'bun':
         ps.append(piece(sphere(HEAD_R * 0.42, (0, 0.135, HEAD_Z + 0.150), (1, 1, 0.9), 8, 5),
                         HAIR, 'head'))

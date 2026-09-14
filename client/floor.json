@@ -555,7 +555,7 @@
    "kind": "seat",
    "x": 14,
    "y": 4,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "meet"
    }
@@ -575,7 +575,7 @@
    "kind": "seat",
    "x": 15,
    "y": 4,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "meet"
    }
@@ -595,7 +595,7 @@
    "kind": "seat",
    "x": 16,
    "y": 4,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "meet"
    }
@@ -615,7 +615,7 @@
    "kind": "seat",
    "x": 17,
    "y": 4,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "meet"
    }
@@ -707,7 +707,7 @@
    "kind": "seat",
    "x": 6,
    "y": 6,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "t1"
    }
@@ -717,7 +717,7 @@
    "kind": "seat",
    "x": 6,
    "y": 8,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "t2"
    }
@@ -737,7 +737,7 @@
    "kind": "seat",
    "x": 7,
    "y": 6,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "t1"
    }
@@ -747,7 +747,7 @@
    "kind": "seat",
    "x": 7,
    "y": 8,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "t2"
    }
@@ -767,7 +767,7 @@
    "kind": "seat",
    "x": 8,
    "y": 6,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "t1"
    }
@@ -777,7 +777,7 @@
    "kind": "seat",
    "x": 8,
    "y": 8,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "t2"
    }
@@ -797,7 +797,7 @@
    "kind": "seat",
    "x": 9,
    "y": 6,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "t1"
    }
@@ -807,7 +807,7 @@
    "kind": "seat",
    "x": 9,
    "y": 8,
-   "rot": 0,
+   "rot": 180,
    "data": {
     "table": "t2"
    }

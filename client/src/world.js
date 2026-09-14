@@ -177,8 +177,14 @@ export class ClientWorld {
     return a.seatId ? this.grid.objectById(a.seatId) : null;
   }
 
-  /** 席から見て机のある向き。座ったら机を向く */
+  /**
+   * 席から見て机のある向き。座ったら机を向く。
+   *
+   * ★ 椅子の置き向き（seat.rot）と同じ値を使う。別々に決めると、
+   *   椅子が南を向いたまま人だけ机を向き、背もたれに正対する。
+   */
   seatFacing(seat) {
+    if (seat.rot != null) return seat.rot * Math.PI / 180;
     for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
       if (this.grid.isBlocked(seat.x + dx, seat.y + dy)) return Math.atan2(dx, dy);
     }

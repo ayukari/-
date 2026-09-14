@@ -110,6 +110,20 @@ function layout() {
   put('plant', 16, 8);
   put('crate', 11, 8);
 
+  /* ★ 席の向きを、机のある方向から決める。
+     以前は席の rot がいつも 0 だったので、**椅子だけが南を向いたまま**で、
+     座った人は背もたれに正対していた。向きの規則は1つしか無い（ここ）。
+     クライアントは seat.rot をそのまま読む（client/src/world.js seatFacing）。 */
+  const solid = new Set(blocked.map(([x, y]) => x + ',' + y));
+  for (const o of objects) {
+    if (o.kind !== 'seat') continue;
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      if (!solid.has((o.x + dx) + ',' + (o.y + dy))) continue;
+      o.rot = Math.round(Math.atan2(dx, dy) * 180 / Math.PI);
+      break;
+    }
+  }
+
   return { objects, blocked };
 }
 
