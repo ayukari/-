@@ -25,7 +25,6 @@ namespace Hidamari.EditorTools
             var rig = camGo.GetComponent<CameraRig>() ?? camGo.AddComponent<CameraRig>();
             rig.roomWidth = boot.Grid.Width;
             rig.roomHeight = boot.Grid.Height;
-            rig.SendMessage("Awake", SendMessageOptions.DontRequireReceiver);
             rig.Apply(false);
 
             EnsureLights();

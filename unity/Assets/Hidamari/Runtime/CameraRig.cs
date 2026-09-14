@@ -22,21 +22,31 @@ namespace Hidamari.Runtime
         Camera _cam;
         bool _ready;
 
-        void Awake()
+        void Awake() => Setup();
+
+        /// ★ エディタで AddComponent しても Awake は呼ばれない。
+        ///   Awake 頼みにすると、メニューから組んだ直後だけカメラが設定されないまま残る。
+        ///   使う側から必ず通るここで用意する
+        Camera Setup()
         {
-            _cam = GetComponent<Camera>();
+            if (_cam == null) _cam = GetComponent<Camera>();
             _cam.fieldOfView = 38f;                 // 画角を狭くすると遠近が弱まり、箱庭に見える
             _cam.nearClipPlane = 0.5f;
             _cam.farClipPlane = 140f;
+            return _cam;
         }
 
         void LateUpdate() => Apply(Time.deltaTime > 0);
 
         public void Apply(bool smooth)
         {
+            var cam = Setup();
             float pitch = pitchDeg * Mathf.Deg2Rad;
-            float halfV = _cam.fieldOfView * Mathf.Deg2Rad / 2;
-            float tanH = Mathf.Tan(halfV) * _cam.aspect;
+            float halfV = cam.fieldOfView * Mathf.Deg2Rad / 2;
+            // ★ エディタでは aspect が 0 のことがある。0 で割ると距離が Infinity になり、
+            //   カメラが原点から吹き飛んで「何も映らない」状態になる
+            float aspect = cam.aspect > 0.01f ? cam.aspect : 16f / 9f;
+            float tanH = Mathf.Tan(halfV) * aspect;
 
             float fitW = (roomWidth / 2f + 1.4f) / tanH;
             float fillD = (roomHeight / 2f + 0.6f) * Mathf.Sin(pitch) / Mathf.Tan(halfV);
