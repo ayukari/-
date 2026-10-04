@@ -17,7 +17,7 @@ Searched the web and GitHub on 2026-10-04.
 
 ## 2. Why these three
 
-The bar: zero capital, can be built mostly by Claude, has a real payment rail, and could get a first sale within a week.
+The bar: zero capital, can be built mostly by Claude, has a real payment rail, and has long-term revenue potential. A first sale within the week is **not** required (owner, 2026-10-04).
 
 | Option considered | Verdict |
 |---|---|
@@ -38,7 +38,7 @@ Realistic targets for a brand-new, zero-follower account:
 | Skills repo stars | ≥ 10 |
 | Zenn book published, chapters | 1 book, ≥ 8 chapters |
 | Templates listed | ≥ 2 listings |
-| First revenue | ≥ ¥1 from any channel |
+| First revenue | Not required in week 1 (owner, 2026-10-04) |
 
 The honest expectation is that revenue in week 1 is **likely ¥0–¥3,000**. The real output of the week is the assets and the learning about which channel converts.
 

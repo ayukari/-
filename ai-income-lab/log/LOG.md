@@ -25,3 +25,7 @@
   - Zenn's policy allows AI writing only if a human reviews it; bot-run accounts and mass posting are restricted.
   - BOOTH has hidden mass-produced AI goods since 2025-07. pixivFANBOX bans AI content. App stores need fees (not zero-capital).
 - R1 complete (3/3 reports). Proxy blocked direct page reads, so R2 must verify key numbers via other routes (GitHub-hosted sources, multiple snippets).
+
+## 2026-10-04 16:0x JST · Owner clarified the goal
+- Owner: "It is fine not to have sales results within one week."
+- Effect: week-1 revenue is no longer a selection criterion or a success metric. S1 will weight **long-term revenue potential, compounding assets, and learning** over time-to-first-sale. Slow-payout channels (GitHub Sponsors, Modrinth/CurseForge, KDP) are back in consideration.

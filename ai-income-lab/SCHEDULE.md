@@ -22,3 +22,6 @@ The hourly loop fires at **:10** every hour (Routine `trig_016i6Qf9W6EQT2gjU7YRa
 ## Days 1–7
 
 To be written in block W1 (2026-10-04 19:09–20:09 JST), after the three candidates are chosen.
+
+## S1 scoring criteria (set before research ends, so selection is not biased)
+Each candidate is scored 1–5 on: zero capital · Claude can do most of the work · long-term revenue potential (6–12 months) · compounding asset (keeps earning without hourly work) · platform/account risk (low = good) · owner effort needed. Week-1 revenue is **not** a criterion.
