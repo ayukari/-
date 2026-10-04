@@ -19,3 +19,9 @@
   - Avoid AI bug-bounty reports and mass PRs or issues (account-suspension risk).
   - Payout holds mean week-1 earnings mostly won't reach the bank in week 1.
   - Note: GitHub Pages terms forbid commercial or SaaS use; the Cloudflare Workers free tier allows it.
+- R1 agent "Japan channels and rules" finished → `research/R1-japan-channels.md`.
+  - Only Zenn paid books show evidence of a first sale within days from a small or new account (score 4).
+  - No channel pays out cash within 7 days.
+  - Zenn's policy allows AI writing only if a human reviews it; bot-run accounts and mass posting are restricted.
+  - BOOTH has hidden mass-produced AI goods since 2025-07. pixivFANBOX bans AI content. App stores need fees (not zero-capital).
+- R1 complete (3/3 reports). Proxy blocked direct page reads, so R2 must verify key numbers via other routes (GitHub-hosted sources, multiple snippets).
