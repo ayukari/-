@@ -13,3 +13,9 @@
 - Started three R1 research agents in parallel: global methods, Japan channels and rules, and GitHub skills/mods prior art. Outputs go to `research/R1-*.md`.
 - Created the hourly Routine `trig_016i6Qf9W6EQT2gjU7YRa9sW`. It fires at :10 every hour into this session; the first fire is 16:10 JST.
 - R1 agent "GitHub skills/mods prior art" finished → `research/R1-github-prior-art.md`. Key points: both public "AI agent earns money" experiments made $0 (blocked by KYC and buyer reach, and spam got one suspended). Japanese skills have high demand and low supply (about 0.27% of agent-skills repos). Japanese back-office is nearly empty. Zenn nets about ¥868 per ¥1,000 book. Modrinth and CurseForge pay out too slowly for cash in week 1.
+- R1 agent "global methods" finished → `research/R1-global-methods.md`. Key points:
+  - No public case shows an AI earning money in week 1 from $0 with no audience. Distribution and KYC are the bottleneck.
+  - Best fit (3/5) is a small, high-quality paid digital product that the owner shares personally.
+  - Avoid AI bug-bounty reports and mass PRs or issues (account-suspension risk).
+  - Payout holds mean week-1 earnings mostly won't reach the bank in week 1.
+  - Note: GitHub Pages terms forbid commercial or SaaS use; the Cloudflare Workers free tier allows it.
