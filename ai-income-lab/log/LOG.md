@@ -12,3 +12,4 @@
 - Block R1 started.
 - Started three R1 research agents in parallel: global methods, Japan channels and rules, and GitHub skills/mods prior art. Outputs go to `research/R1-*.md`.
 - Created the hourly Routine `trig_016i6Qf9W6EQT2gjU7YRa9sW`. It fires at :10 every hour into this session; the first fire is 16:10 JST.
+- R1 agent "GitHub skills/mods prior art" finished → `research/R1-github-prior-art.md`. Key points: both public "AI agent earns money" experiments made $0 (blocked by KYC and buyer reach, and spam got one suspended). Japanese skills have high demand and low supply (about 0.27% of agent-skills repos). Japanese back-office is nearly empty. Zenn nets about ¥868 per ¥1,000 book. Modrinth and CurseForge pay out too slowly for cash in week 1.
